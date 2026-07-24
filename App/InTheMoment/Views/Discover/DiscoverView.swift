@@ -11,6 +11,16 @@ struct DiscoverView: View {
         EventFeed.search(model.events, query: query)
     }
 
+    private var creatorResults: [Creator] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return model.creators.filter { creator in
+            [creator.displayName, creator.handle, creator.bio ?? ""]
+                .joined(separator: " ")
+                .range(of: trimmed, options: .caseInsensitive) != nil
+        }
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             AsyncContentView(
@@ -22,6 +32,26 @@ struct DiscoverView: View {
             ) {
                     ScrollView {
                         LazyVStack(spacing: 16) {
+                            if !creatorResults.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Creators")
+                                        .font(.headline)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    ForEach(creatorResults) { creator in
+                                        NavigationLink {
+                                            CreatorProfileView(creator: creator)
+                                        } label: {
+                                            DiscoverCreatorRow(creator: creator)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            if !creatorResults.isEmpty && !results.isEmpty {
+                                Divider()
+                            }
+
                             ForEach(results) { event in
                                 EventRow(event: event, creator: model.creator(id: event.creatorId))
                                     .contentShape(Rectangle())
@@ -47,6 +77,38 @@ struct DiscoverView: View {
             .searchable(text: $query, prompt: "Search events")
             .refreshable { await model.refresh() }
         }
+    }
+}
+
+private struct DiscoverCreatorRow: View {
+    let creator: Creator
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RemoteImage(url: creator.avatarURL)
+                .frame(width: 44, height: 44)
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(creator.displayName).font(.subheadline.weight(.semibold))
+                    if creator.isVerified {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(model.accentColor)
+                    }
+                }
+                Text(creator.displayHandle)
+                    .font(.caption)
+                    .foregroundStyle(model.accentColor)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
