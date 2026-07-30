@@ -12,6 +12,8 @@ final class MediaModel: Model, @unchecked Sendable {
     @Field(key: "url") var url: String
     @OptionalField(key: "thumbnail_url") var thumbnailURL: String?
     @OptionalField(key: "caption") var caption: String?
+    @OptionalField(key: "uploader_id") var uploaderId: UUID?
+    @OptionalField(key: "uploader_name") var uploaderName: String?
     @OptionalField(key: "width") var width: Int?
     @OptionalField(key: "height") var height: Int?
     @OptionalField(key: "duration_seconds") var durationSeconds: Double?
@@ -28,6 +30,8 @@ final class MediaModel: Model, @unchecked Sendable {
         self.url = item.url.absoluteString
         self.thumbnailURL = item.thumbnailURL?.absoluteString
         self.caption = item.caption
+        self.uploaderId = item.uploaderID
+        self.uploaderName = item.uploaderName
         self.width = item.width
         self.height = item.height
         self.durationSeconds = item.durationSeconds
@@ -44,6 +48,8 @@ final class MediaModel: Model, @unchecked Sendable {
             url: URL(string: url) ?? URL(string: "about:blank")!,
             thumbnailURL: thumbnailURL.flatMap(URL.init(string:)),
             caption: caption,
+            uploaderID: uploaderId,
+            uploaderName: uploaderName,
             width: width,
             height: height,
             durationSeconds: durationSeconds,
@@ -65,6 +71,18 @@ struct AddMediaSortOrder: AsyncMigration {
 
     func revert(on database: Database) async throws {
         // SQLite cannot drop columns on older versions; keep the additive column.
+    }
+}
+
+struct AddMediaUploader: AsyncMigration {
+    func prepare(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        try await sql.raw("ALTER TABLE \(unsafeRaw: MediaModel.schema) ADD COLUMN uploader_id UUID").run()
+        try await sql.raw("ALTER TABLE \(unsafeRaw: MediaModel.schema) ADD COLUMN uploader_name TEXT").run()
+    }
+
+    func revert(on database: Database) async throws {
+        // SQLite cannot drop columns on older versions; keep additive columns.
     }
 }
 

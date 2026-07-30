@@ -5,12 +5,17 @@ import InTheMomentCore
 /// Full-screen viewer for a single photo or video, with a Save-to-device action.
 struct MediaDetailView: View {
     let item: MediaItem
+    var initialLikeSummary: LikeSummary = LikeSummary(eventID: UUID())
+    var onLikeChanged: ((LikeSummary) -> Void)? = nil
     /// Called after the item is successfully saved (used to record a download).
     var onDownloaded: (() -> Void)? = nil
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var downloadState: DownloadState = .idle
     @State private var reportTarget: ReportTarget?
+    @State private var likeSummary: LikeSummary?
+    @State private var isTogglingLike = false
 
     private enum DownloadState: Equatable {
         case idle, downloading, done, failed(String)
@@ -27,6 +32,7 @@ struct MediaDetailView: View {
                     Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) { downloadButton }
+                ToolbarItem(placement: .topBarTrailing) { likeButton }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         reportTarget = ReportTarget(
@@ -45,6 +51,11 @@ struct MediaDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $reportTarget) { target in
                 ReportSheet(target: target)
+            }
+            .task(id: item.id) {
+                likeSummary = initialLikeSummary.eventID == item.id
+                    ? initialLikeSummary
+                    : await model.mediaLikeSummary(mediaID: item.id, eventID: item.eventId)
             }
         }
     }
@@ -82,6 +93,17 @@ struct MediaDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var likeButton: some View {
+        let summary = likeSummary ?? LikeSummary(eventID: item.id)
+        Button {
+            toggleLike(summary)
+        } label: {
+            Label("\(summary.count)", systemImage: summary.likedByViewer ? "heart.fill" : "heart")
+        }
+        .disabled(isTogglingLike || !model.isAccountSignedIn)
+    }
+
     private func save() async {
         downloadState = .downloading
         do {
@@ -90,6 +112,17 @@ struct MediaDetailView: View {
             onDownloaded?()
         } catch {
             downloadState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func toggleLike(_ summary: LikeSummary) {
+        isTogglingLike = true
+        Task {
+            defer { isTogglingLike = false }
+            if let updated = await model.setMediaLike(mediaID: item.id, eventID: item.eventId, !summary.likedByViewer) {
+                likeSummary = updated
+                onLikeChanged?(updated)
+            }
         }
     }
 

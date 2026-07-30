@@ -78,3 +78,65 @@ struct CreateEventLike: AsyncMigration {
         try await database.schema(EventLikeModel.schema).delete()
     }
 }
+
+final class CommentLikeModel: Model, @unchecked Sendable {
+    static let schema = "comment_likes"
+
+    @ID(custom: "id", generatedBy: .user) var id: UUID?
+    @Field(key: "comment_id") var commentId: UUID
+    @Field(key: "user_id") var userId: UUID
+
+    init() {}
+
+    init(id: UUID = UUID(), commentId: UUID, userId: UUID) {
+        self.id = id
+        self.commentId = commentId
+        self.userId = userId
+    }
+}
+
+struct CreateCommentLike: AsyncMigration {
+    func prepare(on database: Database) async throws {
+        try await database.schema(CommentLikeModel.schema)
+            .field("id", .uuid, .identifier(auto: false))
+            .field("comment_id", .uuid, .required, .references(CommentModel.schema, "id", onDelete: .cascade))
+            .field("user_id", .uuid, .required, .references(UserModel.schema, "id", onDelete: .cascade))
+            .unique(on: "comment_id", "user_id")
+            .create()
+    }
+
+    func revert(on database: Database) async throws {
+        try await database.schema(CommentLikeModel.schema).delete()
+    }
+}
+
+final class MediaLikeModel: Model, @unchecked Sendable {
+    static let schema = "media_likes"
+
+    @ID(custom: "id", generatedBy: .user) var id: UUID?
+    @Field(key: "media_id") var mediaId: UUID
+    @Field(key: "user_id") var userId: UUID
+
+    init() {}
+
+    init(id: UUID = UUID(), mediaId: UUID, userId: UUID) {
+        self.id = id
+        self.mediaId = mediaId
+        self.userId = userId
+    }
+}
+
+struct CreateMediaLike: AsyncMigration {
+    func prepare(on database: Database) async throws {
+        try await database.schema(MediaLikeModel.schema)
+            .field("id", .uuid, .identifier(auto: false))
+            .field("media_id", .uuid, .required, .references(MediaModel.schema, "id", onDelete: .cascade))
+            .field("user_id", .uuid, .required, .references(UserModel.schema, "id", onDelete: .cascade))
+            .unique(on: "media_id", "user_id")
+            .create()
+    }
+
+    func revert(on database: Database) async throws {
+        try await database.schema(MediaLikeModel.schema).delete()
+    }
+}

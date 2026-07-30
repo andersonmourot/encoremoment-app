@@ -151,6 +151,9 @@ struct EventController: RouteCollection {
         try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
         var dto = try req.content.decode(MediaItem.self)
         dto.sortOrder = try await Self.nextSortOrder(eventId, on: req.db)
+        let uploaderID = try token.requireUserID()
+        dto.uploaderID = uploaderID
+        dto.uploaderName = try await Self.displayName(for: uploaderID, on: req.db)
         let media = MediaModel(from: dto)
         media.$event.id = eventId
         try await media.create(on: req.db)
@@ -172,11 +175,14 @@ struct EventController: RouteCollection {
         let thumbnailURL = try body.thumbnail.map {
             try UploadStorage.save($0, fallbackExtension: "jpg", req: req)
         }
+        let uploaderID = try token.requireUserID()
         let dto = MediaItem(
             eventId: eventId,
             kind: body.kind,
             url: mediaURL,
             thumbnailURL: thumbnailURL ?? (body.kind == .photo ? mediaURL : nil),
+            uploaderID: uploaderID,
+            uploaderName: try await Self.displayName(for: uploaderID, on: req.db),
             sortOrder: try await Self.nextSortOrder(eventId, on: req.db)
         )
         let media = MediaModel(from: dto)
@@ -192,12 +198,16 @@ struct EventController: RouteCollection {
               let mediaId = req.parameters.get("mediaId", as: UUID.self) else {
             throw Abort(.badRequest)
         }
-        _ = try await Self.requireOwnedEvent(eventId, token: token, on: req.db)
         guard let media = try await MediaModel.query(on: req.db)
             .filter(\.$id == mediaId)
             .filter(\.$event.$id == eventId)
             .first() else {
             throw Abort(.notFound)
+        }
+        let event = try await Self.requireExistingEvent(eventId, on: req.db)
+        let userId = try token.requireUserID()
+        guard token.creatorId == event.creatorId || media.uploaderId == userId else {
+            throw Abort(.forbidden, reason: "You can only delete media you added.")
         }
         try await media.delete(on: req.db)
         return .noContent
@@ -213,8 +223,13 @@ struct EventController: RouteCollection {
     /// Loads an event and asserts the token's creator owns it.
     private static func requireOwnedEvent(_ id: UUID, token: UserToken, on db: Database) async throws -> EventModel {
         let creatorId = try token.requireCreatorID()
-        guard let model = try await EventModel.find(id, on: db) else { throw Abort(.notFound) }
+        let model = try await requireExistingEvent(id, on: db)
         guard model.creatorId == creatorId else { throw Abort(.forbidden) }
+        return model
+    }
+
+    private static func requireExistingEvent(_ id: UUID, on db: Database) async throws -> EventModel {
+        guard let model = try await EventModel.find(id, on: db) else { throw Abort(.notFound) }
         return model
     }
 
@@ -232,6 +247,14 @@ struct EventController: RouteCollection {
             .filter(\.$event.$id == eventId)
             .count()
         return count
+    }
+
+    private static func displayName(for userId: UUID, on db: Database) async throws -> String {
+        guard let user = try await UserModel.find(userId, on: db) else { throw Abort(.notFound) }
+        if let creatorId = user.creatorId, let creator = try await CreatorModel.find(creatorId, on: db) {
+            return creator.displayName
+        }
+        return String(user.email.prefix(while: { $0 != "@" }))
     }
 
     private static func notifyCommunityUploadIfNeeded(_ eventId: UUID, token: UserToken, on db: Database) async throws {

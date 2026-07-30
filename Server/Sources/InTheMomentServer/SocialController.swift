@@ -11,6 +11,8 @@ struct SocialController: RouteCollection {
 
         // Public reads.
         events.get(":id", "comments", use: listComments)
+        events.grouped(UserToken.authenticator()).get(":id", "comments", ":commentId", "likes", use: commentLikeSummary)
+        events.grouped(UserToken.authenticator()).get(":id", "media", ":mediaId", "likes", use: mediaLikeSummary)
         // Optional auth: anonymous callers get likedByViewer == false.
         events.grouped(UserToken.authenticator()).get(":id", "likes", use: likeSummary)
 
@@ -18,6 +20,10 @@ struct SocialController: RouteCollection {
         let protected = events.grouped(UserToken.authenticator(), UserToken.guardMiddleware())
         protected.post(":id", "comments", use: addComment)
         protected.delete(":id", "comments", ":commentId", use: deleteComment)
+        protected.post(":id", "comments", ":commentId", "like", use: likeComment)
+        protected.delete(":id", "comments", ":commentId", "like", use: unlikeComment)
+        protected.post(":id", "media", ":mediaId", "like", use: likeMedia)
+        protected.delete(":id", "media", ":mediaId", "like", use: unlikeMedia)
         protected.post(":id", "like", use: like)
         protected.delete(":id", "like", use: unlike)
     }
@@ -126,11 +132,98 @@ struct SocialController: RouteCollection {
         return try await Self.summary(eventId: eventId, viewerId: userId, on: req.db)
     }
 
+    func commentLikeSummary(req: Request) async throws -> LikeSummary {
+        let commentId = try commentId(req)
+        _ = try await requireComment(commentId, eventId: id(req), on: req.db)
+        return try await Self.commentSummary(commentId: commentId, viewerId: req.auth.get(UserToken.self)?.userId, on: req.db)
+    }
+
+    func likeComment(req: Request) async throws -> LikeSummary {
+        let userId = try req.auth.require(UserToken.self).requireUserID()
+        let commentId = try commentId(req)
+        _ = try await requireComment(commentId, eventId: id(req), on: req.db)
+        let existing = try await CommentLikeModel.query(on: req.db)
+            .filter(\.$commentId == commentId)
+            .filter(\.$userId == userId)
+            .first()
+        if existing == nil {
+            try await CommentLikeModel(commentId: commentId, userId: userId).create(on: req.db)
+        }
+        return try await Self.commentSummary(commentId: commentId, viewerId: userId, on: req.db)
+    }
+
+    func unlikeComment(req: Request) async throws -> LikeSummary {
+        let userId = try req.auth.require(UserToken.self).requireUserID()
+        let commentId = try commentId(req)
+        try await CommentLikeModel.query(on: req.db)
+            .filter(\.$commentId == commentId)
+            .filter(\.$userId == userId)
+            .delete()
+        return try await Self.commentSummary(commentId: commentId, viewerId: userId, on: req.db)
+    }
+
+    func mediaLikeSummary(req: Request) async throws -> LikeSummary {
+        let mediaId = try mediaId(req)
+        _ = try await requireMedia(mediaId, eventId: id(req), on: req.db)
+        return try await Self.mediaSummary(mediaId: mediaId, viewerId: req.auth.get(UserToken.self)?.userId, on: req.db)
+    }
+
+    func likeMedia(req: Request) async throws -> LikeSummary {
+        let userId = try req.auth.require(UserToken.self).requireUserID()
+        let mediaId = try mediaId(req)
+        _ = try await requireMedia(mediaId, eventId: id(req), on: req.db)
+        let existing = try await MediaLikeModel.query(on: req.db)
+            .filter(\.$mediaId == mediaId)
+            .filter(\.$userId == userId)
+            .first()
+        if existing == nil {
+            try await MediaLikeModel(mediaId: mediaId, userId: userId).create(on: req.db)
+        }
+        return try await Self.mediaSummary(mediaId: mediaId, viewerId: userId, on: req.db)
+    }
+
+    func unlikeMedia(req: Request) async throws -> LikeSummary {
+        let userId = try req.auth.require(UserToken.self).requireUserID()
+        let mediaId = try mediaId(req)
+        try await MediaLikeModel.query(on: req.db)
+            .filter(\.$mediaId == mediaId)
+            .filter(\.$userId == userId)
+            .delete()
+        return try await Self.mediaSummary(mediaId: mediaId, viewerId: userId, on: req.db)
+    }
+
     // MARK: Helpers
 
     private func id(_ req: Request) throws -> UUID {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
         return id
+    }
+
+    private func commentId(_ req: Request) throws -> UUID {
+        guard let id = req.parameters.get("commentId", as: UUID.self) else { throw Abort(.badRequest) }
+        return id
+    }
+
+    private func mediaId(_ req: Request) throws -> UUID {
+        guard let id = req.parameters.get("mediaId", as: UUID.self) else { throw Abort(.badRequest) }
+        return id
+    }
+
+    private func requireComment(_ commentId: UUID, eventId: UUID, on db: Database) async throws -> CommentModel {
+        guard let comment = try await CommentModel.find(commentId, on: db), comment.eventId == eventId else {
+            throw Abort(.notFound)
+        }
+        return comment
+    }
+
+    private func requireMedia(_ mediaId: UUID, eventId: UUID, on db: Database) async throws -> MediaModel {
+        guard let media = try await MediaModel.query(on: db)
+            .filter(\.$id == mediaId)
+            .filter(\.$event.$id == eventId)
+            .first() else {
+            throw Abort(.notFound)
+        }
+        return media
     }
 
     private static func summary(eventId: UUID, viewerId: UUID?, on db: Database) async throws -> LikeSummary {
@@ -143,6 +236,30 @@ struct SocialController: RouteCollection {
                 .first() != nil
         }
         return LikeSummary(eventID: eventId, count: count, likedByViewer: liked)
+    }
+
+    private static func commentSummary(commentId: UUID, viewerId: UUID?, on db: Database) async throws -> LikeSummary {
+        let count = try await CommentLikeModel.query(on: db).filter(\.$commentId == commentId).count()
+        var liked = false
+        if let viewerId {
+            liked = try await CommentLikeModel.query(on: db)
+                .filter(\.$commentId == commentId)
+                .filter(\.$userId == viewerId)
+                .first() != nil
+        }
+        return LikeSummary(eventID: commentId, count: count, likedByViewer: liked)
+    }
+
+    private static func mediaSummary(mediaId: UUID, viewerId: UUID?, on db: Database) async throws -> LikeSummary {
+        let count = try await MediaLikeModel.query(on: db).filter(\.$mediaId == mediaId).count()
+        var liked = false
+        if let viewerId {
+            liked = try await MediaLikeModel.query(on: db)
+                .filter(\.$mediaId == mediaId)
+                .filter(\.$userId == viewerId)
+                .first() != nil
+        }
+        return LikeSummary(eventID: mediaId, count: count, likedByViewer: liked)
     }
 
     /// The display name to attribute a comment to: the profile display name when

@@ -16,6 +16,8 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     /// Optional smaller image used in grids and lists. For videos this is a poster frame.
     public var thumbnailURL: URL?
     public var caption: String?
+    public var uploaderID: UUID?
+    public var uploaderName: String?
     public var width: Int?
     public var height: Int?
     /// Duration in seconds; only meaningful for `.video`.
@@ -33,6 +35,8 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         url: URL,
         thumbnailURL: URL? = nil,
         caption: String? = nil,
+        uploaderID: UUID? = nil,
+        uploaderName: String? = nil,
         width: Int? = nil,
         height: Int? = nil,
         durationSeconds: Double? = nil,
@@ -46,6 +50,8 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.url = url
         self.thumbnailURL = thumbnailURL
         self.caption = caption
+        self.uploaderID = uploaderID
+        self.uploaderName = uploaderName
         self.width = width
         self.height = height
         self.durationSeconds = durationSeconds
@@ -55,7 +61,7 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, eventId, kind, url, thumbnailURL, caption, width, height
+        case id, eventId, kind, url, thumbnailURL, caption, uploaderID, uploaderName, width, height
         case durationSeconds, isDownloadable, sortOrder, createdAt
     }
 
@@ -67,6 +73,8 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         url = try container.decode(URL.self, forKey: .url)
         thumbnailURL = try container.decodeIfPresent(URL.self, forKey: .thumbnailURL)
         caption = try container.decodeIfPresent(String.self, forKey: .caption)
+        uploaderID = try container.decodeIfPresent(UUID.self, forKey: .uploaderID)
+        uploaderName = try container.decodeIfPresent(String.self, forKey: .uploaderName)
         width = try container.decodeIfPresent(Int.self, forKey: .width)
         height = try container.decodeIfPresent(Int.self, forKey: .height)
         durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
@@ -83,6 +91,8 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         try container.encode(url, forKey: .url)
         try container.encodeIfPresent(thumbnailURL, forKey: .thumbnailURL)
         try container.encodeIfPresent(caption, forKey: .caption)
+        try container.encodeIfPresent(uploaderID, forKey: .uploaderID)
+        try container.encodeIfPresent(uploaderName, forKey: .uploaderName)
         try container.encodeIfPresent(width, forKey: .width)
         try container.encodeIfPresent(height, forKey: .height)
         try container.encodeIfPresent(durationSeconds, forKey: .durationSeconds)

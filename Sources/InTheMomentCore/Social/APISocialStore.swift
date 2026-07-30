@@ -10,6 +10,12 @@ import FoundationNetworking
 /// GET    /events/{id}/comments                (public)        -> [Comment]
 /// POST   /events/{id}/comments                (auth)          -> Comment    { "body": "..." }
 /// DELETE /events/{id}/comments/{commentId}    (auth)          -> 204
+/// GET    /events/{id}/comments/{commentId}/likes             -> LikeSummary
+/// POST   /events/{id}/comments/{commentId}/like              -> LikeSummary
+/// DELETE /events/{id}/comments/{commentId}/like              -> LikeSummary
+/// GET    /events/{id}/media/{mediaId}/likes                  -> LikeSummary
+/// POST   /events/{id}/media/{mediaId}/like                   -> LikeSummary
+/// DELETE /events/{id}/media/{mediaId}/like                   -> LikeSummary
 /// GET    /events/{id}/likes                   (optional auth) -> LikeSummary
 /// POST   /events/{id}/like                    (auth)          -> LikeSummary
 /// DELETE /events/{id}/like                    (auth)          -> LikeSummary
@@ -50,6 +56,30 @@ public actor APISocialStore: SocialStore {
 
     public func deleteComment(id: UUID, eventID: UUID) async throws {
         try await send("events/\(eventID.uuidString)/comments/\(id.uuidString)", method: "DELETE")
+    }
+
+    public func commentLikeSummary(commentID: UUID, eventID: UUID) async throws -> LikeSummary {
+        try await request("events/\(eventID.uuidString)/comments/\(commentID.uuidString)/likes", method: "GET")
+    }
+
+    @discardableResult
+    public func setCommentLike(commentID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary {
+        try await request(
+            "events/\(eventID.uuidString)/comments/\(commentID.uuidString)/like",
+            method: liked ? "POST" : "DELETE"
+        )
+    }
+
+    public func mediaLikeSummary(mediaID: UUID, eventID: UUID) async throws -> LikeSummary {
+        try await request("events/\(eventID.uuidString)/media/\(mediaID.uuidString)/likes", method: "GET")
+    }
+
+    @discardableResult
+    public func setMediaLike(mediaID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary {
+        try await request(
+            "events/\(eventID.uuidString)/media/\(mediaID.uuidString)/like",
+            method: liked ? "POST" : "DELETE"
+        )
     }
 
     public func likeSummary(forEvent eventID: UUID) async throws -> LikeSummary {

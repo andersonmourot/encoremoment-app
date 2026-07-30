@@ -12,6 +12,16 @@ struct CommentsSection: View {
     @State private var draft = ""
     @State private var isPosting = false
     @State private var reportTarget: ReportTarget?
+    @State private var likesByComment: [UUID: LikeSummary] = [:]
+
+    private var sortedComments: [Comment] {
+        comments.sorted {
+            let left = likesByComment[$0.id]?.count ?? 0
+            let right = likesByComment[$1.id]?.count ?? 0
+            if left == right { return $0.createdAt < $1.createdAt }
+            return left > right
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -25,10 +35,13 @@ struct CommentsSection: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(comments) { comment in
+                ForEach(sortedComments) { comment in
                     CommentRow(
                         comment: comment,
+                        likeSummary: likesByComment[comment.id] ?? LikeSummary(eventID: comment.id),
                         canDelete: model.canDelete(comment, in: event),
+                        canLike: model.isAccountSignedIn,
+                        onToggleLike: { await toggleLike(comment) },
                         onReport: {
                             reportTarget = ReportTarget(
                                 targetType: .comment,
@@ -82,7 +95,16 @@ struct CommentsSection: View {
 
     private func load() async {
         comments = await model.comments(forEvent: event.id)
+        await loadLikes()
         hasLoaded = true
+    }
+
+    private func loadLikes() async {
+        var summaries: [UUID: LikeSummary] = [:]
+        for comment in comments {
+            summaries[comment.id] = await model.commentLikeSummary(commentID: comment.id, eventID: event.id)
+        }
+        likesByComment = summaries
     }
 
     private func post() async {
@@ -91,6 +113,7 @@ struct CommentsSection: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let created = await model.addComment(eventID: event.id, body: text) else { return }
         comments.append(created)
+        likesByComment[created.id] = LikeSummary(eventID: created.id)
         draft = ""
     }
 
@@ -99,12 +122,22 @@ struct CommentsSection: View {
             comments.removeAll { $0.id == comment.id }
         }
     }
+
+    private func toggleLike(_ comment: Comment) async {
+        let current = likesByComment[comment.id] ?? LikeSummary(eventID: comment.id)
+        if let updated = await model.setCommentLike(commentID: comment.id, eventID: event.id, !current.likedByViewer) {
+            likesByComment[comment.id] = updated
+        }
+    }
 }
 
 /// A single comment: author, relative time, body, and an optional delete action.
 private struct CommentRow: View {
     let comment: Comment
+    let likeSummary: LikeSummary
     let canDelete: Bool
+    let canLike: Bool
+    let onToggleLike: () async -> Void
     let onReport: () -> Void
     let onDelete: () async -> Void
 
@@ -117,6 +150,15 @@ private struct CommentRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    Task { await onToggleLike() }
+                } label: {
+                    Label("\(likeSummary.count)", systemImage: likeSummary.likedByViewer ? "heart.fill" : "heart")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .disabled(!canLike)
+                .accessibilityLabel(likeSummary.likedByViewer ? "Unlike comment" : "Like comment")
                 Menu {
                     Button {
                         onReport()

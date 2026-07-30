@@ -470,6 +470,38 @@ final class AppModel: ObservableObject {
         return false
     }
 
+    func canDeleteMedia(_ item: MediaItem, in event: Event) -> Bool {
+        if let creator = currentCreator, creator.id == event.creatorId { return true }
+        if let userID = signedInUserID, item.uploaderID == userID { return true }
+        return false
+    }
+
+    func commentLikeSummary(commentID: UUID, eventID: UUID) async -> LikeSummary {
+        (try? await socialStore.commentLikeSummary(commentID: commentID, eventID: eventID)) ?? LikeSummary(eventID: commentID)
+    }
+
+    func setCommentLike(commentID: UUID, eventID: UUID, _ liked: Bool) async -> LikeSummary? {
+        do {
+            return try await socialStore.setCommentLike(commentID: commentID, eventID: eventID, liked)
+        } catch {
+            errorMessage = "Couldn't update your comment like. Please try again."
+            return nil
+        }
+    }
+
+    func mediaLikeSummary(mediaID: UUID, eventID: UUID) async -> LikeSummary {
+        (try? await socialStore.mediaLikeSummary(mediaID: mediaID, eventID: eventID)) ?? LikeSummary(eventID: mediaID)
+    }
+
+    func setMediaLike(mediaID: UUID, eventID: UUID, _ liked: Bool) async -> LikeSummary? {
+        do {
+            return try await socialStore.setMediaLike(mediaID: mediaID, eventID: eventID, liked)
+        } catch {
+            errorMessage = "Couldn't update your media like. Please try again."
+            return nil
+        }
+    }
+
     func likeSummary(forEvent eventID: UUID) async -> LikeSummary {
         (try? await socialStore.likeSummary(forEvent: eventID)) ?? LikeSummary(eventID: eventID)
     }

@@ -7,6 +7,7 @@ struct MediaGridView: View {
     let media: [MediaItem]
     var onTap: (MediaItem) -> Void
     var onSetCover: ((MediaItem) -> Void)? = nil
+    var canDelete: ((MediaItem) -> Bool)? = nil
     var onDelete: ((MediaItem) -> Void)? = nil
     var onReorder: (([MediaItem]) -> Void)? = nil
     var onReorderFinished: (() -> Void)? = nil
@@ -47,7 +48,7 @@ struct MediaGridView: View {
                             Label("Set as Cover", systemImage: "photo")
                         }
                     }
-                    if let onDelete {
+                    if let onDelete, canDelete?(item) ?? true {
                         Button(role: .destructive) {
                             onDelete(item)
                         } label: {

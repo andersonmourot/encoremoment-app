@@ -11,6 +11,12 @@ public protocol SocialStore: Sendable {
     func addComment(eventID: UUID, body: String) async throws -> Comment
     /// Deletes a comment (author or the event's creator only).
     func deleteComment(id: UUID, eventID: UUID) async throws
+    func commentLikeSummary(commentID: UUID, eventID: UUID) async throws -> LikeSummary
+    @discardableResult
+    func setCommentLike(commentID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary
+    func mediaLikeSummary(mediaID: UUID, eventID: UUID) async throws -> LikeSummary
+    @discardableResult
+    func setMediaLike(mediaID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary
     /// The like count and the viewer's like state for an event.
     func likeSummary(forEvent eventID: UUID) async throws -> LikeSummary
     /// Sets the viewer's like state; returns the updated summary.
@@ -23,6 +29,8 @@ public protocol SocialStore: Sendable {
 public actor InMemorySocialStore: SocialStore {
     private var commentsByEvent: [UUID: [Comment]] = [:]
     private var likesByEvent: [UUID: Set<UUID>] = [:]
+    private var likesByComment: [UUID: Set<UUID>] = [:]
+    private var likesByMedia: [UUID: Set<UUID>] = [:]
     private let viewerID: UUID
     private let viewerName: String
 
@@ -54,6 +62,36 @@ public actor InMemorySocialStore: SocialStore {
 
     public func deleteComment(id: UUID, eventID: UUID) async throws {
         commentsByEvent[eventID]?.removeAll { $0.id == id }
+    }
+
+    public func commentLikeSummary(commentID: UUID, eventID: UUID) async throws -> LikeSummary {
+        let likes = likesByComment[commentID] ?? []
+        return LikeSummary(eventID: commentID, count: likes.count, likedByViewer: likes.contains(viewerID))
+    }
+
+    @discardableResult
+    public func setCommentLike(commentID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary {
+        if liked {
+            likesByComment[commentID, default: []].insert(viewerID)
+        } else {
+            likesByComment[commentID]?.remove(viewerID)
+        }
+        return try await commentLikeSummary(commentID: commentID, eventID: eventID)
+    }
+
+    public func mediaLikeSummary(mediaID: UUID, eventID: UUID) async throws -> LikeSummary {
+        let likes = likesByMedia[mediaID] ?? []
+        return LikeSummary(eventID: mediaID, count: likes.count, likedByViewer: likes.contains(viewerID))
+    }
+
+    @discardableResult
+    public func setMediaLike(mediaID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary {
+        if liked {
+            likesByMedia[mediaID, default: []].insert(viewerID)
+        } else {
+            likesByMedia[mediaID]?.remove(viewerID)
+        }
+        return try await mediaLikeSummary(mediaID: mediaID, eventID: eventID)
     }
 
     public func likeSummary(forEvent eventID: UUID) async throws -> LikeSummary {

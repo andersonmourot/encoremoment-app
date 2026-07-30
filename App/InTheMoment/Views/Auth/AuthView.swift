@@ -103,6 +103,7 @@ struct AuthView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
 
     private var isValid: Bool {

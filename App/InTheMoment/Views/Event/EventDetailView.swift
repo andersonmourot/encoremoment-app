@@ -16,11 +16,22 @@ struct EventDetailView: View {
     @State private var mediaSelection: [PhotosPickerItem] = []
     @State private var isImportingMedia = false
     @State private var reportTarget: ReportTarget?
+    @State private var mediaPendingRemoval: MediaItem?
+    @State private var mediaLikes: [UUID: LikeSummary] = [:]
 
     /// Always read the freshest copy from the model so newly added media appears.
     private var liveEvent: Event { model.event(id: event.id) ?? event }
 
     private var isFavorite: Bool { model.isFavorite(liveEvent.id) }
+
+    private var rankedMedia: [MediaItem] {
+        liveEvent.media.sorted {
+            let left = mediaLikes[$0.id]?.count ?? 0
+            let right = mediaLikes[$1.id]?.count ?? 0
+            if left == right { return $0.sortOrder < $1.sortOrder }
+            return left > right
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -100,7 +111,12 @@ struct EventDetailView: View {
                     )
                     .frame(height: 200)
                 } else {
-                    MediaGridView(media: liveEvent.media) { selectedMedia = $0 }
+                    MediaGridView(
+                        media: rankedMedia,
+                        onTap: { selectedMedia = $0 },
+                        canDelete: { model.canDeleteMedia($0, in: liveEvent) },
+                        onDelete: { mediaPendingRemoval = $0 }
+                    )
                 }
 
                 Divider()
@@ -114,6 +130,7 @@ struct EventDetailView: View {
         .task(id: liveEvent.id) {
             await model.recordView(liveEvent.id)
             likeSummary = await model.likeSummary(forEvent: liveEvent.id)
+            await loadMediaLikes()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -152,7 +169,11 @@ struct EventDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedMedia) { item in
-            MediaDetailView(item: item) {
+            MediaDetailView(
+                item: item,
+                initialLikeSummary: mediaLikes[item.id] ?? LikeSummary(eventID: item.id),
+                onLikeChanged: { mediaLikes[item.id] = $0 }
+            ) {
                 Task { await model.recordDownloads(eventID: liveEvent.id, count: 1) }
             }
         }
@@ -161,6 +182,20 @@ struct EventDetailView: View {
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(target: target)
+        }
+        .alert(
+            "Remove this media?",
+            isPresented: Binding(
+                get: { mediaPendingRemoval != nil },
+                set: { if !$0 { mediaPendingRemoval = nil } }
+            )
+        ) {
+            Button("Remove Media", role: .destructive) {
+                removePendingMedia()
+            }
+            Button("Cancel", role: .cancel) { mediaPendingRemoval = nil }
+        } message: {
+            Text("This removes your contributed photo or video from this event.")
         }
         .photosPicker(
             isPresented: $showingMediaPicker,
@@ -204,6 +239,22 @@ struct EventDetailView: View {
             if let updated = await model.setLike(eventID: liveEvent.id, !currentlyLiked) {
                 likeSummary = updated
             }
+        }
+    }
+
+    private func loadMediaLikes() async {
+        var summaries: [UUID: LikeSummary] = [:]
+        for item in liveEvent.media {
+            summaries[item.id] = await model.mediaLikeSummary(mediaID: item.id, eventID: liveEvent.id)
+        }
+        mediaLikes = summaries
+    }
+
+    private func removePendingMedia() {
+        guard let item = mediaPendingRemoval else { return }
+        mediaPendingRemoval = nil
+        Task {
+            await model.removeMedia(item.id, from: liveEvent.id)
         }
     }
 
