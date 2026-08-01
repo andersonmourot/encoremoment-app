@@ -28,7 +28,10 @@ public func configure(_ app: Application) async throws {
         at: URL(fileURLWithPath: uploadsPath, isDirectory: true),
         withIntermediateDirectories: true
     )
-    app.storage[UploadsConfigurationKey.self] = UploadsConfiguration(directory: uploadsPath)
+    app.storage[UploadsConfigurationKey.self] = UploadsConfiguration(
+        directory: uploadsPath,
+        r2: R2Configuration.fromEnvironment()
+    )
 
     app.migrations.add(CreateCreator())
     app.migrations.add(AddCreatorAccentColor())

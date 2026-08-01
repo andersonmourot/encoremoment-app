@@ -138,7 +138,7 @@ struct AuthController: RouteCollection {
             throw Abort(.notFound)
         }
         let body = try req.content.decode(AvatarUploadRequest.self)
-        let avatarURL = try UploadStorage.save(body.file, fallbackExtension: "jpg", req: req)
+        let avatarURL = try await UploadStorage.save(body.file, fallbackExtension: "jpg", req: req)
         creator.avatarURL = avatarURL.absoluteString
         try await creator.save(on: req.db)
         return creator.toDTO()

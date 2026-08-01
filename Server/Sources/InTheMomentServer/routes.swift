@@ -167,13 +167,16 @@ struct EventController: RouteCollection {
         try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
 
         let body = try req.content.decode(MediaUploadRequest.self)
-        let mediaURL = try UploadStorage.save(
+        let mediaURL = try await UploadStorage.save(
             body.file,
             fallbackExtension: body.kind == .video ? "mp4" : "jpg",
             req: req
         )
-        let thumbnailURL = try body.thumbnail.map {
-            try UploadStorage.save($0, fallbackExtension: "jpg", req: req)
+        let thumbnailURL: URL?
+        if let thumbnail = body.thumbnail {
+            thumbnailURL = try await UploadStorage.save(thumbnail, fallbackExtension: "jpg", req: req)
+        } else {
+            thumbnailURL = nil
         }
         let uploaderID = try token.requireUserID()
         let dto = MediaItem(

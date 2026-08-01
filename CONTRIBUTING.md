@@ -139,9 +139,11 @@ Errors use Vapor's envelope: `{ "error": true, "reason": "…" }`.
 
 The server is containerized (`Dockerfile`, multi-stage, static Swift stdlib) and
 configured by `fly.toml` (app `inthemoment-api`, region `iad`, 1 GB volume mounted
-at `/data`). Uploaded media defaults to a sibling `uploads` directory next to
-`DATABASE_PATH` (for Fly, `/data/uploads`). Override with `UPLOADS_PATH`; set
-`PUBLIC_BASE_URL` if the API needs to generate upload URLs with a fixed public base.
+at `/data`). Uploaded media uses Cloudflare R2 when `R2_BUCKET`, `R2_ENDPOINT`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_PUBLIC_BASE_URL` are present.
+Without R2 secrets, uploads fall back to a sibling `uploads` directory next to
+`DATABASE_PATH` (for Fly, `/data/uploads`). Override fallback storage with
+`UPLOADS_PATH`; set `PUBLIC_BASE_URL` if fallback URLs need a fixed public base.
 
 ```bash
 flyctl secrets set JWT_SECRET=$(openssl rand -hex 32) --app inthemoment-api
