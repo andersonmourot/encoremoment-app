@@ -152,5 +152,6 @@ struct AuthView: View {
                 dismiss()
             }
         }
+        .preferredColorScheme(.dark)
     }
 }
