@@ -24,7 +24,10 @@ enum EventMediaImporter {
                 )
                 continue
             } catch {
-                // If the deployed API does not support uploads yet, keep local media working.
+                guard AppConfig.usesLocalAPI else {
+                    throw error
+                }
+                // Local development can keep working without a deployed upload backend.
             }
 
             let url = try MediaStorage.store(data: item.data, fileExtension: ext)

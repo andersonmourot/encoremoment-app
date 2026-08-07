@@ -11,4 +11,9 @@ enum AppConfig {
         }
         return URL(string: "https://inthemoment-api.fly.dev")!
     }
+
+    static var usesLocalAPI: Bool {
+        guard let host = apiBaseURL.host else { return false }
+        return host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0"
+    }
 }
