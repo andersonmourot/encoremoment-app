@@ -1,8 +1,6 @@
 import Foundation
 import Crypto
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+import NIOCore
 import Vapor
 
 struct UploadsConfiguration {
@@ -59,7 +57,8 @@ enum UploadStorage {
                 data: data,
                 key: filename,
                 contentType: file.contentType?.description ?? "application/octet-stream",
-                config: r2
+                config: r2,
+                req: req
             )
         }
 
@@ -69,7 +68,7 @@ enum UploadStorage {
         return try publicURL(filename: filename, req: req)
     }
 
-    private static func uploadToR2(data: Data, key: String, contentType: String, config: R2Configuration) async throws -> URL {
+    private static func uploadToR2(data: Data, key: String, contentType: String, config: R2Configuration, req: Request) async throws -> URL {
         let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
         let objectURL = config.endpoint
             .appendingPathComponent(config.bucket)
@@ -107,19 +106,28 @@ enum UploadStorage {
             .hmacHex(stringToSign)
         let authorization = "AWS4-HMAC-SHA256 Credential=\(config.accessKeyID)/\(credentialScope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
 
-        var request = URLRequest(url: objectURL)
-        request.httpMethod = "PUT"
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        request.setValue(payloadHash, forHTTPHeaderField: "x-amz-content-sha256")
-        request.setValue(timestamp.long, forHTTPHeaderField: "x-amz-date")
-        request.setValue(authorization, forHTTPHeaderField: "Authorization")
-        request.httpBody = data
-
-        let (responseData, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(data: responseData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw Abort(.badGateway, reason: "R2 upload failed with status \(status)\(body.map { ": \($0)" } ?? "").")
+        var body = ByteBufferAllocator().buffer(capacity: data.count)
+        body.writeBytes(data)
+        let headers: HTTPHeaders = [
+            "Content-Type": contentType,
+            "x-amz-content-sha256": payloadHash,
+            "x-amz-date": timestamp.long,
+            "Authorization": authorization
+        ]
+        let clientRequest = ClientRequest(
+            method: .PUT,
+            url: URI(string: objectURL.absoluteString),
+            headers: headers,
+            body: body,
+            timeout: .seconds(60)
+        )
+        let response = try await req.client.send(clientRequest)
+        guard (200..<300).contains(response.status.code) else {
+            let responseBody = response.body.flatMap { buffer in
+                var copy = buffer
+                return copy.readString(length: copy.readableBytes)
+            }?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw Abort(.badGateway, reason: "R2 upload failed with status \(response.status.code)\(responseBody.map { ": \($0)" } ?? "").")
         }
         return config.publicBaseURL.appendingPathComponent(key)
     }
