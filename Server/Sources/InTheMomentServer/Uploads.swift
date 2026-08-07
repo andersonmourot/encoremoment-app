@@ -110,6 +110,7 @@ enum UploadStorage {
         body.writeBytes(data)
         let headers: HTTPHeaders = [
             "Content-Type": contentType,
+            "Content-Length": "\(data.count)",
             "x-amz-content-sha256": payloadHash,
             "x-amz-date": timestamp.long,
             "Authorization": authorization
