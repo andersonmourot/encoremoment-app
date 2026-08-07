@@ -81,28 +81,28 @@ enum UploadStorage {
         let timestamp = Timestamp()
         let payloadHash = data.sha256Hex
         let canonicalURI = "/\(config.bucket)/\(encodedKey)"
-        let canonicalHeaders = """
-        host:\(host)
-        x-amz-content-sha256:\(payloadHash)
-        x-amz-date:\(timestamp.long)
-
-        """
         let signedHeaders = "host;x-amz-content-sha256;x-amz-date"
-        let canonicalRequest = """
-        PUT
-        \(canonicalURI)
-
-        \(canonicalHeaders)
-        \(signedHeaders)
-        \(payloadHash)
-        """
+        let canonicalHeaders = [
+            "host:\(host)",
+            "x-amz-content-sha256:\(payloadHash)",
+            "x-amz-date:\(timestamp.long)"
+        ].joined(separator: "\n")
+        let canonicalRequest = [
+            "PUT",
+            canonicalURI,
+            "",
+            canonicalHeaders,
+            "",
+            signedHeaders,
+            payloadHash
+        ].joined(separator: "\n")
         let credentialScope = "\(timestamp.short)/auto/s3/aws4_request"
-        let stringToSign = """
-        AWS4-HMAC-SHA256
-        \(timestamp.long)
-        \(credentialScope)
-        \(canonicalRequest.sha256Hex)
-        """
+        let stringToSign = [
+            "AWS4-HMAC-SHA256",
+            timestamp.long,
+            credentialScope,
+            canonicalRequest.sha256Hex
+        ].joined(separator: "\n")
         let signature = signingKey(secret: config.secretAccessKey, date: timestamp.short)
             .hmacHex(stringToSign)
         let authorization = "AWS4-HMAC-SHA256 Credential=\(config.accessKeyID)/\(credentialScope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
@@ -115,10 +115,11 @@ enum UploadStorage {
         request.setValue(authorization, forHTTPHeaderField: "Authorization")
         request.httpBody = data
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (responseData, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw Abort(.badGateway, reason: "R2 upload failed with status \(status).")
+            let body = String(data: responseData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw Abort(.badGateway, reason: "R2 upload failed with status \(status)\(body.map { ": \($0)" } ?? "").")
         }
         return config.publicBaseURL.appendingPathComponent(key)
     }
