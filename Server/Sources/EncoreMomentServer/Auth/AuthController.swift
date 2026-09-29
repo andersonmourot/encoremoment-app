@@ -44,6 +44,7 @@ struct AuthController: RouteCollection {
         protected.get("me", use: me)
         protected.post("profile", use: completeProfile)
         protected.post("avatar", use: uploadAvatar)
+        protected.delete("account", use: deleteAccount)
     }
 
     func register(req: Request) async throws -> AuthResponse {
@@ -142,6 +143,94 @@ struct AuthController: RouteCollection {
         creator.avatarURL = avatarURL.absoluteString
         try await creator.save(on: req.db)
         return creator.toDTO()
+    }
+
+    /// Permanently deletes the account, its creator profile, and everything
+    /// attached to either (events, media, social rows, fan preferences).
+    func deleteAccount(req: Request) async throws -> HTTPStatus {
+        let token = try req.auth.require(UserToken.self)
+        let userId = try token.requireUserID()
+        guard let user = try await UserModel.find(userId, on: req.db) else {
+            throw Abort(.notFound)
+        }
+        let creatorId = user.creatorId
+
+        // Content owned via the creator profile.
+        let eventIds: [UUID] = creatorId == nil ? [] : try await EventModel.query(on: req.db)
+            .filter(\.$creatorId == creatorId!)
+            .all()
+            .compactMap(\.id)
+        let eventMedia: [MediaModel] = eventIds.isEmpty ? [] : try await MediaModel.query(on: req.db)
+            .filter(\.$event.$id ~~ eventIds)
+            .all()
+        // Media this user uploaded to other creators' events.
+        let uploadedMedia = try await MediaModel.query(on: req.db)
+            .filter(\.$uploaderId == userId)
+            .all()
+        let allMedia = eventMedia + uploadedMedia
+        let allMediaIds = Set(allMedia.compactMap(\.id))
+
+        // Comments authored by the user plus any left on their events.
+        let authoredCommentIds = try await CommentModel.query(on: req.db)
+            .filter(\.$userId == userId)
+            .all()
+            .compactMap(\.id)
+        let eventCommentIds: [UUID] = eventIds.isEmpty ? [] : try await CommentModel.query(on: req.db)
+            .filter(\.$eventId ~~ eventIds)
+            .all()
+            .compactMap(\.id)
+        let allCommentIds = authoredCommentIds + eventCommentIds
+
+        let avatarURL: String? = creatorId == nil ? nil
+            : try await CreatorModel.find(creatorId!, on: req.db)?.avatarURL
+
+        try await req.db.transaction { db in
+            try await CommentLikeModel.query(on: db).filter(\.$userId == userId).delete()
+            if !allCommentIds.isEmpty {
+                try await CommentLikeModel.query(on: db).filter(\.$commentId ~~ allCommentIds).delete()
+            }
+            try await CommentModel.query(on: db).filter(\.$userId == userId).delete()
+            try await EventLikeModel.query(on: db).filter(\.$userId == userId).delete()
+            try await MediaLikeModel.query(on: db).filter(\.$userId == userId).delete()
+            try await FavoriteModel.query(on: db).filter(\.$userId == userId).delete()
+            try await FollowModel.query(on: db).filter(\.$userId == userId).delete()
+            try await ReportModel.query(on: db).filter(\.$userId == userId).delete()
+            try await NotificationModel.query(on: db).filter(\.$userId == userId).delete()
+            try await MediaModel.query(on: db).filter(\.$uploaderId == userId).delete()
+
+            if !eventIds.isEmpty {
+                try await CommentModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
+                try await EventLikeModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
+                try await FavoriteModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
+                try await EventStatsModel.query(on: db).filter(\.$id ~~ eventIds).delete()
+                try await MediaModel.query(on: db).filter(\.$event.$id ~~ eventIds).delete()
+            }
+            if !allMediaIds.isEmpty {
+                try await MediaLikeModel.query(on: db).filter(\.$mediaId ~~ Array(allMediaIds)).delete()
+            }
+            let reportTargetIds = eventIds + allMediaIds + allCommentIds + (creatorId.map { [$0] } ?? [])
+            if !reportTargetIds.isEmpty {
+                try await ReportModel.query(on: db).filter(\.$targetId ~~ reportTargetIds).delete()
+            }
+            if let creatorId {
+                try await EventModel.query(on: db).filter(\.$creatorId == creatorId).delete()
+                try await FollowModel.query(on: db).filter(\.$creatorId == creatorId).delete()
+                if let creator = try await CreatorModel.find(creatorId, on: db) {
+                    try await creator.delete(on: db)
+                }
+            }
+            try await user.delete(on: db)
+        }
+
+        // Uploaded files are best-effort cleanup after the rows are gone.
+        var fileURLs = allMedia.map(\.url) + allMedia.compactMap(\.thumbnailURL)
+        if let avatarURL { fileURLs.append(avatarURL) }
+        for raw in fileURLs {
+            if let url = URL(string: raw) {
+                await UploadStorage.delete(publicURL: url, req: req)
+            }
+        }
+        return .noContent
     }
 
     /// Resolves the user's creator profile, if they have one.

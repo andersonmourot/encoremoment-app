@@ -68,7 +68,46 @@ enum UploadStorage {
         return try publicURL(filename: filename, req: req)
     }
 
+    /// Best-effort removal of a previously uploaded object. R2 objects get a
+    /// signed DELETE; local files are removed from the uploads directory.
+    static func delete(publicURL url: URL, req: Request) async {
+        guard let config = req.application.storage[UploadsConfigurationKey.self] else { return }
+        if let r2 = config.r2,
+           url.absoluteString.hasPrefix(r2.publicBaseURL.absoluteString) {
+            try? await deleteFromR2(key: url.lastPathComponent, config: r2, req: req)
+            return
+        }
+        // Local mode serves files at /uploads/<filename> — only delete those.
+        guard url.path.hasPrefix("/uploads/") else { return }
+        let fileURL = URL(fileURLWithPath: config.directory, isDirectory: true)
+            .appendingPathComponent(url.lastPathComponent)
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     private static func uploadToR2(data: Data, key: String, contentType: String, config: R2Configuration, req: Request) async throws -> URL {
+        var body = ByteBufferAllocator().buffer(capacity: data.count)
+        body.writeBytes(data)
+        let clientRequest = try r2Request(method: .PUT, key: key, body: body, contentType: contentType, config: config)
+        let response = try await req.client.send(clientRequest)
+        guard (200..<300).contains(response.status.code) else {
+            let responseBody = response.body.flatMap { buffer in
+                var copy = buffer
+                return copy.readString(length: copy.readableBytes)
+            }?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw Abort(.badGateway, reason: "R2 upload failed with status \(response.status.code)\(responseBody.map { ": \($0)" } ?? "").")
+        }
+        return config.publicBaseURL.appendingPathComponent(key)
+    }
+
+    private static func deleteFromR2(key: String, config: R2Configuration, req: Request) async throws {
+        let clientRequest = try r2Request(method: .DELETE, key: key, body: ByteBuffer(), contentType: nil, config: config)
+        let response = try await req.client.send(clientRequest)
+        guard (200..<300).contains(response.status.code) else {
+            throw Abort(.badGateway, reason: "R2 delete failed with status \(response.status.code).")
+        }
+    }
+
+    private static func r2Request(method: HTTPMethod, key: String, body: ByteBuffer, contentType: String?, config: R2Configuration) throws -> ClientRequest {
         let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
         let objectURL = config.endpoint
             .appendingPathComponent(config.bucket)
@@ -78,7 +117,9 @@ enum UploadStorage {
         }
 
         let timestamp = Timestamp()
-        let payloadHash = data.sha256Hex
+        let payloadHash = body.readableBytes == 0
+            ? "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            : body.getData(at: body.readerIndex, length: body.readableBytes)!.sha256Hex
         let canonicalURI = "/\(config.bucket)/\(encodedKey)"
         let signedHeaders = "host;x-amz-content-sha256;x-amz-date"
         let canonicalHeaders = [
@@ -87,7 +128,7 @@ enum UploadStorage {
             "x-amz-date:\(timestamp.long)"
         ].joined(separator: "\n")
         let canonicalRequest = [
-            "PUT",
+            method.rawValue,
             canonicalURI,
             "",
             canonicalHeaders,
@@ -106,31 +147,22 @@ enum UploadStorage {
             .hmacHex(stringToSign)
         let authorization = "AWS4-HMAC-SHA256 Credential=\(config.accessKeyID)/\(credentialScope), SignedHeaders=\(signedHeaders), Signature=\(signature)"
 
-        var body = ByteBufferAllocator().buffer(capacity: data.count)
-        body.writeBytes(data)
-        let headers: HTTPHeaders = [
-            "Content-Type": contentType,
-            "Content-Length": "\(data.count)",
+        var headers: HTTPHeaders = [
+            "Content-Length": "\(body.readableBytes)",
             "x-amz-content-sha256": payloadHash,
             "x-amz-date": timestamp.long,
             "Authorization": authorization
         ]
-        let clientRequest = ClientRequest(
-            method: .PUT,
+        if let contentType {
+            headers.add(name: "Content-Type", value: contentType)
+        }
+        return ClientRequest(
+            method: method,
             url: URI(string: objectURL.absoluteString),
             headers: headers,
             body: body,
             timeout: .seconds(60)
         )
-        let response = try await req.client.send(clientRequest)
-        guard (200..<300).contains(response.status.code) else {
-            let responseBody = response.body.flatMap { buffer in
-                var copy = buffer
-                return copy.readString(length: copy.readableBytes)
-            }?.trimmingCharacters(in: .whitespacesAndNewlines)
-            throw Abort(.badGateway, reason: "R2 upload failed with status \(response.status.code)\(responseBody.map { ": \($0)" } ?? "").")
-        }
-        return config.publicBaseURL.appendingPathComponent(key)
     }
 
     static func publicURL(filename: String, req: Request) throws -> URL {

@@ -455,6 +455,8 @@ private struct SettingsView: View {
     @EnvironmentObject private var auth: AuthService
     @EnvironmentObject private var settings: AppSettings
     @State private var showingLogoutConfirmation = false
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeletingAccount = false
     @State private var selectedAccentHex = AppAccentColor.encorePurple.rawValue
 
     private var selectedTheme: Binding<AppTheme> {
@@ -524,6 +526,21 @@ private struct SettingsView: View {
                         } label: {
                             Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
                         }
+                        Button(role: .destructive) {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            if isDeletingAccount {
+                                ProgressView()
+                            } else {
+                                Label("Delete Account", systemImage: "trash")
+                            }
+                        }
+                        .disabled(isDeletingAccount)
+                        if let error = auth.errorMessage {
+                            Text(error)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
                     }
                 }
 
@@ -554,6 +571,18 @@ private struct SettingsView: View {
         } message: {
             Text("You can sign back in at any time.")
         }
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                deleteAccount()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your account, profile, events, and media. This cannot be undone.")
+        }
         .onAppear {
             selectedAccentHex = model.accentColorHex
         }
@@ -577,6 +606,18 @@ private struct SettingsView: View {
         Task {
             await model.didSignOut()
             dismiss()
+        }
+    }
+
+    private func deleteAccount() {
+        isDeletingAccount = true
+        Task {
+            let deleted = await auth.deleteAccount()
+            isDeletingAccount = false
+            if deleted {
+                await model.didSignOut()
+                dismiss()
+            }
         }
     }
 }

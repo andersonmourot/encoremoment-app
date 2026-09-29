@@ -94,6 +94,31 @@ final class AuthClientTests: XCTestCase {
         XCTAssertEqual(body["handle"], "dj")
     }
 
+    func testDeleteAccountSendsDeleteWithBearer() async throws {
+        let transport = MockTransport { _ in (204, Data()) }
+        let client = AuthClient(baseURL: baseURL, transport: transport)
+        try await client.deleteAccount(token: "tok123")
+        let req = transport.requests.first!
+        XCTAssertEqual(req.httpMethod, "DELETE")
+        XCTAssertEqual(req.url?.path, "/auth/account")
+        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer tok123")
+    }
+
+    func testDeleteAccountPropagatesErrorReason() async {
+        let body = Data(#"{"error":true,"reason":"Not found."}"#.utf8)
+        let transport = MockTransport { _ in (404, body) }
+        let client = AuthClient(baseURL: baseURL, transport: transport)
+        do {
+            try await client.deleteAccount(token: "tok123")
+            XCTFail("Expected error")
+        } catch let error as AuthError {
+            XCTAssertEqual(error.status, 404)
+            XCTAssertEqual(error.reason, "Not found.")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testAuthenticatedTransportAttachesToken() async throws {
         let inner = MockTransport { _ in (200, Data("[]".utf8)) }
         let transport = AuthenticatedTransport(base: inner) { "thetoken" }

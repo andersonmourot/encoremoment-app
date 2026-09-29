@@ -63,6 +63,25 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Permanently deletes the account on the server, then signs out locally.
+    func deleteAccount() async -> Bool {
+        guard let token = TokenHolder.shared.token else { return false }
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            try await client.deleteAccount(token: token)
+            logout()
+            return true
+        } catch let error as AuthError {
+            errorMessage = error.message
+            return false
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+            return false
+        }
+    }
+
     func logout() {
         TokenHolder.shared.set(nil)
         account = nil

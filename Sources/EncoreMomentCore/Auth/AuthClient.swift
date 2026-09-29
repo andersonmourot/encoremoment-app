@@ -96,6 +96,15 @@ public actor AuthClient {
         return try decoder.decode(Account.self, from: data)
     }
 
+    /// Permanently deletes the account and everything attached to it.
+    public func deleteAccount(token: String) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("auth/account"))
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, http) = try await transport.send(request)
+        try validate(http, data: data)
+    }
+
     private func post<Body: Encodable>(_ path: String, body: Body) async throws -> AuthSession {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"

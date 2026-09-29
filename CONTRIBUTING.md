@@ -68,6 +68,7 @@ continue to decode.
 | `GET` | `/auth/me` | — (Bearer token) | `{ id, email, creator? }` |
 | `POST` | `/auth/profile` | `{ displayName, handle }` (Bearer token) | `{ token, userId, creator }` |
 | `POST` | `/auth/avatar` | multipart `{ file }` (Bearer token) | `Creator` with updated `avatarURL` |
+| `DELETE` | `/auth/account` | — (Bearer token) | `204`; deletes the user, creator profile, owned events/media, social rows, fan preferences, and uploaded files |
 
 ### Fan preferences (favorites & follows)
 
