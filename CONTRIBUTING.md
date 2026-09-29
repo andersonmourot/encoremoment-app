@@ -78,10 +78,18 @@ and act on the token's user. Each mutating call returns the updated `FanPreferen
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/me/preferences` | current favorites + follows |
+| `GET` | `/me/preferences` | current favorites + follows + blocked creators |
 | `PUT` | `/me/preferences` | union-merge a `FanPreferences` body (used on first sign-in) |
 | `POST` · `DELETE` | `/me/favorites/{eventId}` | add / remove a favorite |
 | `POST` · `DELETE` | `/me/follows/{creatorId}` | follow / unfollow |
+| `GET` | `/me/blocks` | profiles of creators you've blocked |
+| `POST` · `DELETE` | `/me/blocks/{creatorId}` | block / unblock a creator. Blocking also unfollows, drops favorites on their events, hides their content in your feeds, and files a moderation report |
+
+Blocking (App Store 1.2): for signed-in users, `/creators`, `/events`, event
+media, and `/events/{id}/comments` are filtered server-side against the
+caller's blocks (public reads accept an optional token for this). The app also
+filters client-side so blocked content disappears instantly and for anonymous
+viewers.
 
 ### Events & media
 

@@ -17,6 +17,11 @@ struct AuthView: View {
     @State private var password = ""
     @State private var displayName = ""
     @State private var handle = ""
+    /// Required by App Review (guideline 1.2): users must accept the Terms of
+    /// Use — which state zero tolerance for objectionable content and abusive
+    /// users — before registering or logging in.
+    @State private var agreedToTerms = false
+    @State private var showingTerms = false
 
     private var normalizedEmail: String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -79,6 +84,19 @@ struct AuthView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $agreedToTerms) {
+                        Text("I agree to the Terms of Use")
+                    }
+                    Button {
+                        showingTerms = true
+                    } label: {
+                        Text("Read Terms of Use")
+                    }
+                } footer: {
+                    Text("Our terms make clear there is zero tolerance for objectionable content or abusive users.")
+                }
+
+                Section {
                     Button(action: submit) {
                         HStack {
                             Spacer()
@@ -90,7 +108,7 @@ struct AuthView: View {
                             Spacer()
                         }
                     }
-                    .disabled(auth.isWorking || !isValid)
+                    .disabled(auth.isWorking || !isValid || !agreedToTerms)
                 }
             }
             .navigationTitle(mode == .login ? "Welcome back" : "Join EncoreMoment")
@@ -101,6 +119,9 @@ struct AuthView: View {
                         Button("Cancel") { dismiss() }
                     }
                 }
+            }
+            .sheet(isPresented: $showingTerms) {
+                TermsView()
             }
         .preferredColorScheme(.dark)
         }

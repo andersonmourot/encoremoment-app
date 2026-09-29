@@ -10,7 +10,7 @@ struct SocialController: RouteCollection {
         let events = routes.grouped("events")
 
         // Public reads.
-        events.get(":id", "comments", use: listComments)
+        events.grouped(UserToken.authenticator()).get(":id", "comments", use: listComments)
         events.grouped(UserToken.authenticator()).get(":id", "comments", ":commentId", "likes", use: commentLikeSummary)
         events.grouped(UserToken.authenticator()).get(":id", "media", ":mediaId", "likes", use: mediaLikeSummary)
         // Optional auth: anonymous callers get likedByViewer == false.
@@ -32,11 +32,16 @@ struct SocialController: RouteCollection {
 
     func listComments(req: Request) async throws -> [Comment] {
         let eventId = try id(req)
-        let rows = try await CommentModel.query(on: req.db)
+        var query = CommentModel.query(on: req.db)
             .filter(\.$eventId == eventId)
+        let blockedUsers = try await Moderation.blockedUserIDs(for: req)
+        if !blockedUsers.isEmpty {
+            query = query.filter(\.$userId !~ Array(blockedUsers))
+        }
+        return try await query
             .sort(\.$createdAt, .ascending)
             .all()
-        return rows.map { $0.toDTO() }
+            .map { $0.toDTO() }
     }
 
     func addComment(req: Request) async throws -> Comment {

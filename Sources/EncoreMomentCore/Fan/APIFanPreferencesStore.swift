@@ -15,6 +15,9 @@ import FoundationNetworking
 /// DELETE /me/favorites/{eventId}
 /// POST   /me/follows/{creatorId}
 /// DELETE /me/follows/{creatorId}
+/// GET    /me/blocks
+/// POST   /me/blocks/{creatorId}
+/// DELETE /me/blocks/{creatorId}
 /// ```
 /// Requires an authenticated transport (the app wraps ``AuthenticatedTransport``).
 public actor APIFanPreferencesStore: FanPreferencesStore {
@@ -42,6 +45,25 @@ public actor APIFanPreferencesStore: FanPreferencesStore {
     @discardableResult
     public func setFollowing(creatorID: UUID, _ isFollowing: Bool) async throws -> FanPreferences {
         try await request(isFollowing ? "POST" : "DELETE", "me/follows/\(creatorID.uuidString)")
+    }
+
+    @discardableResult
+    public func setBlocked(creatorID: UUID, _ isBlocked: Bool) async throws -> FanPreferences {
+        try await request(isBlocked ? "POST" : "DELETE", "me/blocks/\(creatorID.uuidString)")
+    }
+
+    /// The profiles the viewer has blocked (the server filters them out of
+    /// `/creators`, so they're fetched through a dedicated route).
+    public func blockedCreators() async throws -> [Creator] {
+        var request = URLRequest(url: baseURL.appendingPathComponent("me/blocks"))
+        request.httpMethod = "GET"
+        let (data, http) = try await transport.send(request)
+        try Self.validate(http)
+        do {
+            return try decoder.decode([Creator].self, from: data)
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
     }
 
     @discardableResult

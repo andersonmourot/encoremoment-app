@@ -507,16 +507,21 @@ private struct SettingsView: View {
                     Text("About")
                 }
 
-                if model.currentCreator != nil {
-                    Section {
+                Section {
+                    if model.currentCreator != nil {
                         NavigationLink {
                             ReportsView()
                         } label: {
                             Label("Reports", systemImage: "flag")
                         }
-                    } header: {
-                        Text("Moderation")
                     }
+                    NavigationLink {
+                        BlockedUsersView()
+                    } label: {
+                        Label("Blocked Users", systemImage: "hand.raised.slash")
+                    }
+                } header: {
+                    Text("Moderation")
                 }
 
                 if auth.isAuthenticated {
@@ -677,6 +682,36 @@ private struct CreatorHeader: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct BlockedUsersView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        List {
+            if model.blockedCreators.isEmpty {
+                Text("No blocked users.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(model.blockedCreators) { creator in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(creator.displayName)
+                            Text(creator.displayHandle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Unblock") {
+                            Task { await model.setBlocked(creator.id, false) }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Blocked Users")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

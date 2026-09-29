@@ -35,6 +35,24 @@ final class FollowModel: Model, @unchecked Sendable {
     }
 }
 
+/// A creator a fan has blocked (per account). Blocked creators are filtered out
+/// of the blocker's event/creator feeds, and their comments/uploads are hidden.
+final class BlockModel: Model, @unchecked Sendable {
+    static let schema = "blocks"
+
+    @ID(custom: "id", generatedBy: .user) var id: UUID?
+    @Field(key: "user_id") var userId: UUID
+    @Field(key: "creator_id") var creatorId: UUID
+
+    init() {}
+
+    init(id: UUID = UUID(), userId: UUID, creatorId: UUID) {
+        self.id = id
+        self.userId = userId
+        self.creatorId = creatorId
+    }
+}
+
 struct CreateFavorite: AsyncMigration {
     var name: String { "CreateFavorite" }
     func prepare(on database: Database) async throws {
@@ -64,5 +82,21 @@ struct CreateFollow: AsyncMigration {
 
     func revert(on database: Database) async throws {
         try await database.schema(FollowModel.schema).delete()
+    }
+}
+
+struct CreateBlock: AsyncMigration {
+    var name: String { "CreateBlock" }
+    func prepare(on database: Database) async throws {
+        try await database.schema(BlockModel.schema)
+            .field("id", .uuid, .identifier(auto: false))
+            .field("user_id", .uuid, .required, .references(UserModel.schema, "id", onDelete: .cascade))
+            .field("creator_id", .uuid, .required, .references(CreatorModel.schema, "id", onDelete: .cascade))
+            .unique(on: "user_id", "creator_id")
+            .create()
+    }
+
+    func revert(on database: Database) async throws {
+        try await database.schema(BlockModel.schema).delete()
     }
 }

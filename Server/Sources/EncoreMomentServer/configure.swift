@@ -45,6 +45,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(MakeUserCreatorOptional())
     app.migrations.add(CreateFavorite())
     app.migrations.add(CreateFollow())
+    app.migrations.add(CreateBlock())
     app.migrations.add(CreateEventStats())
     app.migrations.add(CreateComment())
     app.migrations.add(CreateEventLike())

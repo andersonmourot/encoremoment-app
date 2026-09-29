@@ -6,6 +6,11 @@ public protocol FanPreferencesStore: Sendable {
     func preferences() async throws -> FanPreferences
     @discardableResult func setFavorite(eventID: UUID, _ isFavorite: Bool) async throws -> FanPreferences
     @discardableResult func setFollowing(creatorID: UUID, _ isFollowing: Bool) async throws -> FanPreferences
+    @discardableResult func setBlocked(creatorID: UUID, _ isBlocked: Bool) async throws -> FanPreferences
+    /// Blocked creators as profiles when the store can resolve them (the API
+    /// store asks the server). Local stores return an empty list — callers also
+    /// derive blocked profiles from the creator directory.
+    func blockedCreators() async throws -> [Creator]
     /// Union-merges the given preferences into the store (used to push on-device
     /// favorites/follows up to a freshly signed-in account). Returns the result.
     @discardableResult func merge(_ other: FanPreferences) async throws -> FanPreferences
@@ -16,6 +21,7 @@ public extension FanPreferencesStore {
     func merge(_ other: FanPreferences) async throws -> FanPreferences {
         for eventID in other.favoriteEventIDs { try await setFavorite(eventID: eventID, true) }
         for creatorID in other.followedCreatorIDs { try await setFollowing(creatorID: creatorID, true) }
+        for creatorID in other.blockedCreatorIDs { try await setBlocked(creatorID: creatorID, true) }
         return try await preferences()
     }
 }
@@ -41,6 +47,14 @@ public actor InMemoryFanPreferencesStore: FanPreferencesStore {
         prefs.setFollowing(creatorID, isFollowing)
         return prefs
     }
+
+    @discardableResult
+    public func setBlocked(creatorID: UUID, _ isBlocked: Bool) async throws -> FanPreferences {
+        prefs.setBlocked(creatorID, isBlocked)
+        return prefs
+    }
+
+    public func blockedCreators() async throws -> [Creator] { [] }
 }
 
 /// Persists ``FanPreferences`` to a JSON file on disk (the on-device default).
@@ -68,6 +82,15 @@ public actor FileFanPreferencesStore: FanPreferencesStore {
         try persist()
         return prefs
     }
+
+    @discardableResult
+    public func setBlocked(creatorID: UUID, _ isBlocked: Bool) async throws -> FanPreferences {
+        prefs.setBlocked(creatorID, isBlocked)
+        try persist()
+        return prefs
+    }
+
+    public func blockedCreators() async throws -> [Creator] { [] }
 
     private func persist() throws {
         try FileManager.default.createDirectory(

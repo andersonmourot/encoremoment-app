@@ -5,6 +5,7 @@ struct CreatorProfileView: View {
     let creator: Creator
     @EnvironmentObject private var model: AppModel
     @State private var reportTarget: ReportTarget?
+    @State private var showingBlockConfirmation = false
 
     private var liveCreator: Creator {
         model.creator(id: creator.id) ?? model.currentCreator.flatMap { $0.id == creator.id ? $0 : nil } ?? creator
@@ -84,19 +85,48 @@ struct CreatorProfileView: View {
         .toolbar {
             if !isCurrentCreator {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        reportTarget = ReportTarget(
-                            targetType: .creator,
-                            targetID: liveCreator.id,
-                            eventID: nil,
-                            title: "Report Creator"
-                        )
+                    Menu {
+                        Button {
+                            reportTarget = ReportTarget(
+                                targetType: .creator,
+                                targetID: liveCreator.id,
+                                eventID: nil,
+                                title: "Report Creator"
+                            )
+                        } label: {
+                            Label("Report Creator", systemImage: "flag")
+                        }
+                        if model.isBlocked(liveCreator.id) {
+                            Button {
+                                Task { await model.setBlocked(liveCreator.id, false) }
+                            } label: {
+                                Label("Unblock User", systemImage: "hand.raised.slash")
+                            }
+                        } else {
+                            Button(role: .destructive) {
+                                showingBlockConfirmation = true
+                            } label: {
+                                Label("Block User", systemImage: "hand.raised.slash")
+                            }
+                        }
                     } label: {
-                        Image(systemName: "flag")
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .accessibilityLabel("Report creator")
+                    .accessibilityLabel("Report or block this creator")
                 }
             }
+        }
+        .confirmationDialog(
+            "Block \(liveCreator.displayName)?",
+            isPresented: $showingBlockConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Block User", role: .destructive) {
+                Task { await model.setBlocked(liveCreator.id, true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Their events, comments, and uploads will be hidden from your feed immediately. Blocking also reports this creator to our moderation team.")
         }
         .sheet(item: $reportTarget) { target in
             ReportSheet(target: target)

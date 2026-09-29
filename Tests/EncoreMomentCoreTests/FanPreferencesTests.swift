@@ -31,6 +31,20 @@ final class FanPreferencesTests: XCTestCase {
         XCTAssertTrue(prefs.isFollowing(creator))
         prefs.setFollowing(creator, false)
         XCTAssertFalse(prefs.isFollowing(creator))
+
+        prefs.setBlocked(creator, true)
+        XCTAssertTrue(prefs.isBlocked(creator))
+        prefs.setBlocked(creator, false)
+        XCTAssertFalse(prefs.isBlocked(creator))
+    }
+
+    func testDecodesWithoutBlockedCreatorIDs() throws {
+        // Responses/files from older app versions lack blockedCreatorIDs.
+        let json = """
+        {"favoriteEventIDs":[],"followedCreatorIDs":[]}
+        """.data(using: .utf8)!
+        let prefs = try JSONDecoder().decode(FanPreferences.self, from: json)
+        XCTAssertTrue(prefs.blockedCreatorIDs.isEmpty)
     }
 
     func testInMemoryStoreRoundTrip() async throws {
@@ -85,6 +99,34 @@ final class FanPreferencesTests: XCTestCase {
         _ = try await store.merge(prefs)
         XCTAssertEqual(transport.requests.last?.httpMethod, "PUT")
         XCTAssertEqual(transport.requests.last?.url?.path, "/me/preferences")
+    }
+
+    func testAPIStoreBlockUsesCorrectMethodAndPath() async throws {
+        let creator = UUID()
+        let payload = try JSONEncoder().encode(FanPreferences(blockedCreatorIDs: [creator]))
+        let transport = FanMockTransport { _ in (200, payload) }
+        let store = APIFanPreferencesStore(baseURL: URL(string: "https://api.encoremoment.app")!, transport: transport)
+
+        let blocked = try await store.setBlocked(creatorID: creator, true)
+        XCTAssertEqual(blocked.blockedCreatorIDs, [creator])
+        XCTAssertEqual(transport.requests.last?.httpMethod, "POST")
+        XCTAssertEqual(transport.requests.last?.url?.path, "/me/blocks/\(creator.uuidString)")
+
+        _ = try await store.setBlocked(creatorID: creator, false)
+        XCTAssertEqual(transport.requests.last?.httpMethod, "DELETE")
+        XCTAssertEqual(transport.requests.last?.url?.path, "/me/blocks/\(creator.uuidString)")
+    }
+
+    func testAPIStoreBlockedCreatorsDecodesList() async throws {
+        let creator = Creator(displayName: "Blocked One", handle: "blocked_one")
+        let payload = try JSONEncoder().encode([creator])
+        let transport = FanMockTransport { _ in (200, payload) }
+        let store = APIFanPreferencesStore(baseURL: URL(string: "https://api.encoremoment.app")!, transport: transport)
+
+        let blocked = try await store.blockedCreators()
+        XCTAssertEqual(blocked, [creator])
+        XCTAssertEqual(transport.requests.last?.httpMethod, "GET")
+        XCTAssertEqual(transport.requests.last?.url?.path, "/me/blocks")
     }
 
     func testFeedFiltersByFavoritesAndFollows() {

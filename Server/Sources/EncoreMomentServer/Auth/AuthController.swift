@@ -194,6 +194,7 @@ struct AuthController: RouteCollection {
             try await MediaLikeModel.query(on: db).filter(\.$userId == userId).delete()
             try await FavoriteModel.query(on: db).filter(\.$userId == userId).delete()
             try await FollowModel.query(on: db).filter(\.$userId == userId).delete()
+            try await BlockModel.query(on: db).filter(\.$userId == userId).delete()
             try await ReportModel.query(on: db).filter(\.$userId == userId).delete()
             try await NotificationModel.query(on: db).filter(\.$userId == userId).delete()
             try await MediaModel.query(on: db).filter(\.$uploaderId == userId).delete()
@@ -215,6 +216,7 @@ struct AuthController: RouteCollection {
             if let creatorId {
                 try await EventModel.query(on: db).filter(\.$creatorId == creatorId).delete()
                 try await FollowModel.query(on: db).filter(\.$creatorId == creatorId).delete()
+                try await BlockModel.query(on: db).filter(\.$creatorId == creatorId).delete()
                 if let creator = try await CreatorModel.find(creatorId, on: db) {
                     try await creator.delete(on: db)
                 }

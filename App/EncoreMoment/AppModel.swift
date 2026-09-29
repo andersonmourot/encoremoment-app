@@ -52,6 +52,10 @@ final class AppModel: ObservableObject {
     /// The fan's on-device favorites and followed creators.
     @Published private(set) var fanPrefs = FanPreferences()
 
+    /// Creators the fan has blocked (hidden from `creators`/`events`), kept
+    /// separately so Settings can list and unblock them.
+    @Published private(set) var blockedCreators: [Creator] = []
+
     /// Engagement stats for the current creator's events, keyed by event id.
     @Published private(set) var statsByEvent: [UUID: EventStats] = [:]
     @Published private(set) var notifications: [AppNotification] = []
@@ -135,8 +139,18 @@ final class AppModel: ObservableObject {
         do {
             async let published = store.publishedEvents()
             async let people = store.allCreators()
-            self.events = try await published
-            self.creators = try await people
+            let allEvents = try await published
+            let allCreators = try await people
+            // Blocked creators are hidden from every feed; the server also
+            // filters for signed-in users, and we filter here so anonymous
+            // blocks and instant removal work too.
+            self.events = allEvents.filter { !fanPrefs.isBlocked($0.creatorId) }
+            self.creators = allCreators.filter { !fanPrefs.isBlocked($0.id) }
+            // Signed-in users get blocked profiles from /me/blocks (the server
+            // filters them out of /creators); anonymous users derive them here.
+            let derived = allCreators.filter { fanPrefs.isBlocked($0.id) }
+            let remote = (try? await fanStore.blockedCreators()) ?? []
+            self.blockedCreators = derived + remote.filter { r in !derived.contains(where: { $0.id == r.id }) }
             if let creator = currentCreator {
                 self.myEventsList = try await store.events(forCreator: creator.id)
             } else {
@@ -416,6 +430,34 @@ final class AppModel: ObservableObject {
             fanPrefs = try await fanStore.setFollowing(creatorID: creatorID, newValue)
         } catch {
             errorMessage = "Couldn't \(newValue ? "follow" : "unfollow") right now. Please try again."
+        }
+    }
+
+    // MARK: Blocking
+
+    func isBlocked(_ creatorID: UUID) -> Bool { fanPrefs.isBlocked(creatorID) }
+
+    /// Blocks or unblocks a creator. Blocking removes their events/profile from
+    /// the visible feed immediately (and files a moderation report server-side).
+    func setBlocked(_ creatorID: UUID, _ blocked: Bool) async {
+        do {
+            fanPrefs = try await fanStore.setBlocked(creatorID: creatorID, blocked)
+            if blocked {
+                // Instant feed removal — don't wait for the next refresh.
+                events.removeAll { $0.creatorId == creatorID }
+                if let index = creators.firstIndex(where: { $0.id == creatorID }) {
+                    let removed = creators.remove(at: index)
+                    if !blockedCreators.contains(where: { $0.id == removed.id }) {
+                        blockedCreators.append(removed)
+                    }
+                }
+            } else {
+                blockedCreators.removeAll { $0.id == creatorID }
+                // Refetch so the unblocked creator's content is restored.
+                await refresh()
+            }
+        } catch {
+            errorMessage = "Couldn't \(blocked ? "block" : "unblock") this user. Please try again."
         }
     }
 

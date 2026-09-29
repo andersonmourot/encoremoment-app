@@ -20,15 +20,22 @@ func routes(_ app: Application) throws {
 struct CreatorController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let creators = routes.grouped("creators")
-        creators.get(use: index)
-        creators.get(":id", use: show)
+        // Optional auth on reads: lets signed-in viewers' blocks filter results.
+        let readable = creators.grouped(UserToken.authenticator())
+        readable.get(use: index)
+        readable.get(":id", use: show)
 
         let protected = creators.grouped(UserToken.authenticator(), UserToken.guardMiddleware())
         protected.put(":id", use: update)
     }
 
     func index(req: Request) async throws -> [Creator] {
-        try await CreatorModel.query(on: req.db)
+        var query = CreatorModel.query(on: req.db)
+        let blocked = try await Moderation.blockedCreatorIDs(for: req)
+        if !blocked.isEmpty {
+            query = query.filter(\.$id !~ Array(blocked))
+        }
+        return try await query
             .sort(\.$displayName)
             .all()
             .map { $0.toDTO() }
@@ -67,8 +74,10 @@ struct CreatorController: RouteCollection {
 struct EventController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         let events = routes.grouped("events")
-        events.get(use: index)
-        events.get(":id", use: show)
+        // Optional auth on reads: lets signed-in viewers' blocks filter results.
+        let readable = events.grouped(UserToken.authenticator())
+        readable.get(use: index)
+        readable.get(":id", use: show)
 
         let protected = events.grouped(UserToken.authenticator(), UserToken.guardMiddleware())
         protected.post(use: create)
@@ -87,11 +96,23 @@ struct EventController: RouteCollection {
         if let creator = req.query[UUID.self, at: "creator"] {
             query = query.filter(\.$creatorId == creator)
         }
+        let blocked = try await Moderation.blockedCreatorIDs(for: req)
+        if !blocked.isEmpty {
+            query = query.filter(\.$creatorId !~ Array(blocked))
+        }
         return try await query.sort(\.$date, .descending).all().map { $0.toDTO() }
     }
 
     func show(req: Request) async throws -> Event {
-        try await loadEvent(req).toDTO()
+        var dto = try await loadEvent(req).toDTO()
+        let blockedUsers = try await Moderation.blockedUserIDs(for: req)
+        if !blockedUsers.isEmpty {
+            dto.media = dto.media.filter {
+                guard let uploaderID = $0.uploaderID else { return true }
+                return !blockedUsers.contains(uploaderID)
+            }
+        }
+        return dto
     }
 
     func create(req: Request) async throws -> Event {
