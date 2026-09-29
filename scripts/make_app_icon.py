@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate InTheMoment's app icon (original artwork, no third-party assets).
+"""Generate EncoreMoment's app icon (original artwork, no third-party assets).
 
 Design "Stage Lights": colorful spotlight beams sweeping over a concert crowd
 with confetti — a fun, event-forward mark for a platform built around live
@@ -10,7 +10,7 @@ import os
 import random
 from PIL import Image, ImageDraw, ImageFilter
 
-OUT = "App/InTheMoment/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+OUT = "App/EncoreMoment/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
 SS = 4
 FINAL = 1024
 S = FINAL * SS

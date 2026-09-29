@@ -7,7 +7,7 @@ on:
 
 jobs:
   core-linux:
-    name: Build & test InTheMomentCore (Linux)
+    name: Build & test EncoreMomentCore (Linux)
     runs-on: ubuntu-22.04
     container: swift:6.0.3
     steps:
@@ -18,7 +18,7 @@ jobs:
         run: swift test
 
   server-linux:
-    name: Build InTheMomentServer (Linux)
+    name: Build EncoreMomentServer (Linux)
     runs-on: ubuntu-22.04
     container: swift:6.0.3
     steps:

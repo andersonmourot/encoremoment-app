@@ -1,18 +1,18 @@
 # Roadmap
 
-Status of InTheMoment and the work still to do. This is the handoff checklist —
+Status of EncoreMoment and the work still to do. This is the handoff checklist —
 start here when picking the project up in Cursor (read [AGENTS.md](AGENTS.md) and
-[`.cursor/rules/inthemoment.mdc`](.cursor/rules/inthemoment.mdc) first for the
+[`.cursor/rules/encoremoment.mdc`](.cursor/rules/encoremoment.mdc) first for the
 conventions, and [CONTRIBUTING.md](CONTRIBUTING.md) for build/deploy/REST details).
 
 - **Live API:** https://inthemoment-api.fly.dev
-- **Repo:** https://github.com/andersonmourot/inthemoment-app
+- **Repo:** https://github.com/andersonmourot/encoremoment-app
 
 ## Shipped
 
 | Area | What | Where |
 | --- | --- | --- |
-| Scaffold | SwiftUI app + `InTheMomentCore` package + Xcode project (XcodeGen) | app + core |
+| Scaffold | SwiftUI app + `EncoreMomentCore` package + Xcode project (XcodeGen) | app + core |
 | Persistence | `FileEventStore` (on-device JSON), edit + publish/draft, share/deep links | core + app |
 | REST client | `APIEventStore` over an injectable `HTTPTransport` | core |
 | Backend | Vapor + Fluent + SQLite, full event/media CRUD, deployed to Fly.io | `Server/` |
@@ -30,7 +30,7 @@ conventions, and [CONTRIBUTING.md](CONTRIBUTING.md) for build/deploy/REST detail
   but should move to S3/R2 or another object store before serious scale.
 - **iOS UI is unverified in CI.** The app target needs Apple's SDK; CI only builds
   + tests the core and builds the server. Verify the app by running the
-  `InTheMoment` scheme in Xcode on a Mac.
+  `EncoreMoment` scheme in Xcode on a Mac.
 - **No pagination.** `/events` and comment lists return everything; fine for now,
   will need cursors as data grows.
 - **Auth is access-token only.** No refresh tokens, password reset, or email
@@ -57,7 +57,7 @@ conventions, and [CONTRIBUTING.md](CONTRIBUTING.md) for build/deploy/REST detail
 
 - [ ] `swift build && swift test` passes (core, on Linux or macOS).
 - [ ] `cd Server && swift build` passes.
-- [ ] `xcodegen generate` then build the `InTheMoment` scheme in Xcode on a Mac.
-- [ ] Copy `.env.example` → set `ITM_API_BASE_URL` (app) / `JWT_SECRET` +
+- [ ] `xcodegen generate` then build the `EncoreMoment` scheme in Xcode on a Mac.
+- [ ] Copy `.env.example` → set `EM_API_BASE_URL` (app) / `JWT_SECRET` +
       `DATABASE_PATH` (server) as needed.
 - [ ] Confirm Fly access (`flyctl auth login`) if you'll deploy the backend.

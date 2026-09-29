@@ -1,6 +1,6 @@
 # Contributing / Developer Guide
 
-A practical guide to building, testing, and deploying InTheMoment. For the short
+A practical guide to building, testing, and deploying EncoreMoment. For the short
 list of conventions (especially for AI assistants like Cursor), see [AGENTS.md](AGENTS.md).
 
 ## Prerequisites
@@ -19,7 +19,7 @@ brew install xcodegen flyctl    # macOS
 ## Repository layout
 
 See the tree in the [README](README.md#architecture). The key idea: `Creator`,
-`Event`, and `MediaItem` are defined once in `Sources/InTheMomentCore` and reused
+`Event`, and `MediaItem` are defined once in `Sources/EncoreMomentCore` and reused
 by both the app and the server, so the client/server JSON contract can't drift.
 
 ## Day-to-day commands
@@ -33,19 +33,19 @@ swift test
 cd Server
 swift build
 JWT_SECRET=dev DATABASE_PATH=/tmp/itm.sqlite \
-  swift run InTheMomentServer serve --hostname 127.0.0.1 --port 8080
+  swift run EncoreMomentServer serve --hostname 127.0.0.1 --port 8080
 
 # iOS app (macOS)
 xcodegen generate          # ALWAYS run after adding/removing/renaming files
-open InTheMoment.xcodeproj # run the "InTheMoment" scheme on a simulator
+open EncoreMoment.xcodeproj # run the "EncoreMoment" scheme on a simulator
 ```
 
-> **Never hand-edit `InTheMoment.xcodeproj`** — it is generated from `project.yml`.
+> **Never hand-edit `EncoreMoment.xcodeproj`** — it is generated from `project.yml`.
 > Edit files on disk + `project.yml`, then `xcodegen generate`.
 
 ## Pointing the app at a local server
 
-`AppConfig.apiBaseURL` reads the `ITM_API_BASE_URL` env var (see `.env.example`).
+`AppConfig.apiBaseURL` reads the `EM_API_BASE_URL` env var (see `.env.example`).
 Set it in the Xcode scheme's environment variables to use a local server instead
 of the live one.
 
@@ -158,7 +158,7 @@ flyctl logs --app inthemoment-api
 
 `.github/workflows/ci.yml` runs on every push/PR:
 
-- **core-linux** — `swift build` + `swift test` for `InTheMomentCore`.
+- **core-linux** — `swift build` + `swift test` for `EncoreMomentCore`.
 - **server-linux** — `swift build` for the `Server` package.
 
 The iOS app is not built in CI (needs Apple's SDK); verify it in Xcode.
@@ -167,5 +167,5 @@ The iOS app is not built in CI (needs Apple's SDK); verify it in Xcode.
 
 - Core logic and the network/auth clients are unit-tested with a mock
   `HTTPTransport` (no real network). Add tests alongside new core behavior.
-- Keep `Sources/InTheMomentCore` free of platform frameworks so it keeps building
+- Keep `Sources/EncoreMomentCore` free of platform frameworks so it keeps building
   on Linux/CI.

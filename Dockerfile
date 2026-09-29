@@ -12,17 +12,17 @@ RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
 
 WORKDIR /build
 
-# Copy the entire repo (the server package depends on the root InTheMomentCore package via a path).
+# Copy the entire repo (the server package depends on the root EncoreMomentCore package via a path).
 COPY . .
 
 # Build the server product in release mode with a statically linked stdlib so the
 # runtime image only needs libc/libcurl.
 WORKDIR /build/Server
-RUN swift build -c release --product InTheMomentServer --static-swift-stdlib
+RUN swift build -c release --product EncoreMomentServer --static-swift-stdlib
 
 # Stage the built binary and resources.
 WORKDIR /staging
-RUN cp "$(swift build --package-path /build/Server -c release --show-bin-path)/InTheMomentServer" ./
+RUN cp "$(swift build --package-path /build/Server -c release --show-bin-path)/EncoreMomentServer" ./
 RUN [ -d /build/Server/Public ] && { mv /build/Server/Public ./Public && chmod -R a-w ./Public; } || true
 
 # ================================
@@ -52,5 +52,5 @@ USER vapor:vapor
 
 EXPOSE 8080
 
-ENTRYPOINT ["./InTheMomentServer"]
+ENTRYPOINT ["./EncoreMomentServer"]
 CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]

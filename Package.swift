@@ -2,24 +2,24 @@
 import PackageDescription
 
 let package = Package(
-    name: "InTheMomentCore",
+    name: "EncoreMomentCore",
     platforms: [
         .iOS(.v16),
         .macOS(.v13)
     ],
     products: [
         .library(
-            name: "InTheMomentCore",
-            targets: ["InTheMomentCore"]
+            name: "EncoreMomentCore",
+            targets: ["EncoreMomentCore"]
         )
     ],
     targets: [
         .target(
-            name: "InTheMomentCore"
+            name: "EncoreMomentCore"
         ),
         .testTarget(
-            name: "InTheMomentCoreTests",
-            dependencies: ["InTheMomentCore"]
+            name: "EncoreMomentCoreTests",
+            dependencies: ["EncoreMomentCore"]
         )
     ]
 )

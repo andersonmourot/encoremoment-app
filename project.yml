@@ -1,6 +1,6 @@
-name: InTheMoment
+name: EncoreMoment
 options:
-  bundleIdPrefix: com.inthemoment
+  bundleIdPrefix: com.encoremoment
   xcodeVersion: "16.0"
   projectFormat: xcode14_0
   deploymentTarget:
@@ -8,20 +8,20 @@ options:
   createIntermediateGroups: true
 
 packages:
-  InTheMomentCore:
+  EncoreMomentCore:
     path: .
 
 targets:
-  InTheMoment:
+  EncoreMoment:
     type: application
     platform: iOS
     sources:
-      - path: App/InTheMoment
+      - path: App/EncoreMoment
     dependencies:
-      - package: InTheMomentCore
-        product: InTheMomentCore
+      - package: EncoreMomentCore
+        product: EncoreMomentCore
     info:
-      path: App/InTheMoment/Info.plist
+      path: App/EncoreMoment/Info.plist
       properties:
         CFBundleDisplayName: EncoreMoment
         UILaunchScreen: {}
@@ -31,12 +31,12 @@ targets:
         NSPhotoLibraryAddUsageDescription: "Save event photos and videos to your library so you can use them however you like."
         NSPhotoLibraryUsageDescription: "Pick photos and videos from your library to post to your events."
         CFBundleURLTypes:
-          - CFBundleURLName: com.inthemoment.app
+          - CFBundleURLName: com.encoremoment.app
             CFBundleURLSchemes:
-              - inthemoment
+              - encoremoment
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.inthemoment.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.encoremoment.app
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"

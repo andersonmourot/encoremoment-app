@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "InTheMomentServer",
+    name: "EncoreMomentServer",
     platforms: [
         .macOS(.v13)
     ],
@@ -12,18 +12,18 @@ let package = Package(
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.6.0"),
         .package(url: "https://github.com/vapor/jwt.git", from: "5.0.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
-        .package(name: "InTheMomentCore", path: "..")
+        .package(name: "EncoreMomentCore", path: "..")
     ],
     targets: [
         .executableTarget(
-            name: "InTheMomentServer",
+            name: "EncoreMomentServer",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "Fluent", package: "fluent"),
                 .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
                 .product(name: "JWT", package: "jwt"),
                 .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "InTheMomentCore", package: "InTheMomentCore")
+                .product(name: "EncoreMomentCore", package: "EncoreMomentCore")
             ],
             swiftSettings: [
                 .unsafeFlags(["-cross-module-optimization"], .when(configuration: .release))
