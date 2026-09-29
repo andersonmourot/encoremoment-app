@@ -25,6 +25,7 @@ final class EventStatsModel: Model, @unchecked Sendable {
 }
 
 struct CreateEventStats: AsyncMigration {
+    var name: String { "CreateEventStats" }
     func prepare(on database: Database) async throws {
         try await database.schema(EventStatsModel.schema)
             .field("id", .uuid, .identifier(auto: false),

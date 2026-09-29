@@ -61,6 +61,7 @@ final class MediaModel: Model, @unchecked Sendable {
 }
 
 struct AddMediaSortOrder: AsyncMigration {
+    var name: String { "AddMediaSortOrder" }
     func prepare(on database: Database) async throws {
         guard let sql = database as? any SQLDatabase else { return }
         try await sql.raw("""
@@ -75,6 +76,7 @@ struct AddMediaSortOrder: AsyncMigration {
 }
 
 struct AddMediaUploader: AsyncMigration {
+    var name: String { "AddMediaUploader" }
     func prepare(on database: Database) async throws {
         guard let sql = database as? any SQLDatabase else { return }
         try await sql.raw("ALTER TABLE \(unsafeRaw: MediaModel.schema) ADD COLUMN uploader_id UUID").run()
@@ -87,6 +89,7 @@ struct AddMediaUploader: AsyncMigration {
 }
 
 struct CreateMedia: AsyncMigration {
+    var name: String { "CreateMedia" }
     func prepare(on database: Database) async throws {
         try await database.schema(MediaModel.schema)
             .field("id", .uuid, .identifier(auto: false))

@@ -53,6 +53,7 @@ final class NotificationModel: Model, @unchecked Sendable {
 }
 
 struct CreateNotification: AsyncMigration {
+    var name: String { "CreateNotification" }
     func prepare(on database: Database) async throws {
         try await database.schema(NotificationModel.schema)
             .field("id", .uuid, .identifier(auto: false))

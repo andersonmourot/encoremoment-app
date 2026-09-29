@@ -26,6 +26,7 @@ final class UserModel: Model, @unchecked Sendable {
 }
 
 struct CreateUser: AsyncMigration {
+    var name: String { "CreateUser" }
     func prepare(on database: Database) async throws {
         try await database.schema(UserModel.schema)
             .field("id", .uuid, .identifier(auto: false))
@@ -47,6 +48,7 @@ struct CreateUser: AsyncMigration {
 /// preserving existing rows. The replacement table is built with Fluent's schema
 /// builder so column storage types match exactly, then swapped in by rename.
 struct MakeUserCreatorOptional: AsyncMigration {
+    var name: String { "MakeUserCreatorOptional" }
     private static let tempSchema = "users_optional_creator"
 
     func prepare(on database: Database) async throws {

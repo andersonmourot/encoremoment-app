@@ -2,6 +2,7 @@ import Vapor
 import Fluent
 import FluentSQLiteDriver
 import JWT
+import SQLKit
 
 public func configure(_ app: Application) async throws {
     // JWT signing key (set JWT_SECRET in production).
@@ -51,6 +52,22 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateMediaLike())
     app.migrations.add(CreateReport())
     app.migrations.add(CreateNotification())
+
+    // The InTheMomentServer -> EncoreMomentServer module rename changed the
+    // qualified names Fluent recorded in _fluent_migrations, so an existing
+    // database would look unmigrated and every prepare would fail. Migrations
+    // now declare stable names; rewrite old records to match. No-ops on a
+    // fresh database (the table doesn't exist yet) and on already-fixed ones.
+    if let sql = app.db(.sqlite) as? any SQLDatabase {
+        try? await sql.raw("""
+        UPDATE _fluent_migrations SET name = REPLACE(name, 'InTheMomentServer.', '')
+        WHERE name LIKE 'InTheMomentServer.%'
+        """).run()
+        try? await sql.raw("""
+        UPDATE _fluent_migrations SET name = REPLACE(name, 'EncoreMomentServer.', '')
+        WHERE name LIKE 'EncoreMomentServer.%'
+        """).run()
+    }
     try await app.autoMigrate()
 
     try await seedIfEmpty(app)

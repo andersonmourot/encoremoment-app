@@ -53,6 +53,7 @@ final class CreatorModel: Model, @unchecked Sendable {
 }
 
 struct AddCreatorAccentColor: AsyncMigration {
+    var name: String { "AddCreatorAccentColor" }
     func prepare(on database: Database) async throws {
         guard let sql = database as? any SQLDatabase else { return }
         try await sql.raw("""
@@ -67,6 +68,7 @@ struct AddCreatorAccentColor: AsyncMigration {
 }
 
 struct CreateCreator: AsyncMigration {
+    var name: String { "CreateCreator" }
     func prepare(on database: Database) async throws {
         try await database.schema(CreatorModel.schema)
             .field("id", .uuid, .identifier(auto: false))

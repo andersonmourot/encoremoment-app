@@ -68,6 +68,7 @@ final class EventModel: Model, @unchecked Sendable {
 }
 
 struct AddEventCommunityUploads: AsyncMigration {
+    var name: String { "AddEventCommunityUploads" }
     func prepare(on database: Database) async throws {
         guard let sql = database as? any SQLDatabase else { return }
         try await sql.raw("""
@@ -82,6 +83,7 @@ struct AddEventCommunityUploads: AsyncMigration {
 }
 
 struct CreateEvent: AsyncMigration {
+    var name: String { "CreateEvent" }
     func prepare(on database: Database) async throws {
         try await database.schema(EventModel.schema)
             .field("id", .uuid, .identifier(auto: false))

@@ -36,6 +36,7 @@ final class FollowModel: Model, @unchecked Sendable {
 }
 
 struct CreateFavorite: AsyncMigration {
+    var name: String { "CreateFavorite" }
     func prepare(on database: Database) async throws {
         try await database.schema(FavoriteModel.schema)
             .field("id", .uuid, .identifier(auto: false))
@@ -51,6 +52,7 @@ struct CreateFavorite: AsyncMigration {
 }
 
 struct CreateFollow: AsyncMigration {
+    var name: String { "CreateFollow" }
     func prepare(on database: Database) async throws {
         try await database.schema(FollowModel.schema)
             .field("id", .uuid, .identifier(auto: false))

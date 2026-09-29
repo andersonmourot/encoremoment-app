@@ -31,6 +31,7 @@ final class CommentModel: Model, @unchecked Sendable {
 }
 
 struct CreateComment: AsyncMigration {
+    var name: String { "CreateComment" }
     func prepare(on database: Database) async throws {
         try await database.schema(CommentModel.schema)
             .field("id", .uuid, .identifier(auto: false))
@@ -65,6 +66,7 @@ final class EventLikeModel: Model, @unchecked Sendable {
 }
 
 struct CreateEventLike: AsyncMigration {
+    var name: String { "CreateEventLike" }
     func prepare(on database: Database) async throws {
         try await database.schema(EventLikeModel.schema)
             .field("id", .uuid, .identifier(auto: false))
@@ -96,6 +98,7 @@ final class CommentLikeModel: Model, @unchecked Sendable {
 }
 
 struct CreateCommentLike: AsyncMigration {
+    var name: String { "CreateCommentLike" }
     func prepare(on database: Database) async throws {
         try await database.schema(CommentLikeModel.schema)
             .field("id", .uuid, .identifier(auto: false))
@@ -127,6 +130,7 @@ final class MediaLikeModel: Model, @unchecked Sendable {
 }
 
 struct CreateMediaLike: AsyncMigration {
+    var name: String { "CreateMediaLike" }
     func prepare(on database: Database) async throws {
         try await database.schema(MediaLikeModel.schema)
             .field("id", .uuid, .identifier(auto: false))

@@ -42,6 +42,7 @@ final class ReportModel: Model, @unchecked Sendable {
 }
 
 struct CreateReport: AsyncMigration {
+    var name: String { "CreateReport" }
     func prepare(on database: Database) async throws {
         try await database.schema(ReportModel.schema)
             .field("id", .uuid, .identifier(auto: false))
