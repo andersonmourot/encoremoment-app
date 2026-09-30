@@ -292,7 +292,7 @@ final class AppModel: ObservableObject {
             return false
         }
         guard Creator.isValidHandle(handle) else {
-            errorMessage = "Handle must be 3-30 lowercase letters, numbers, or underscores."
+            errorMessage = "Handle must be 3-30 letters, numbers, or underscores."
             return false
         }
 
@@ -392,7 +392,6 @@ final class AppModel: ObservableObject {
         let cleaned = handle
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
-            .lowercased()
         guard !cleaned.isEmpty else { return nil }
         do {
             return try await store.inviteMember(handle: cleaned, role: role, to: eventID)

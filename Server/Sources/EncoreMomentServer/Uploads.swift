@@ -53,13 +53,19 @@ enum UploadStorage {
         }
 
         if let r2 = config.r2 {
-            return try await uploadToR2(
-                data: data,
-                key: filename,
-                contentType: file.contentType?.description ?? "application/octet-stream",
-                config: r2,
-                req: req
-            )
+            do {
+                return try await uploadToR2(
+                    data: data,
+                    key: filename,
+                    contentType: file.contentType?.description ?? "application/octet-stream",
+                    config: r2,
+                    req: req
+                )
+            } catch {
+                // Broken R2 credentials/config shouldn't hard-fail uploads —
+                // fall back to the local uploads volume.
+                req.logger.warning("R2 upload failed, saving locally: \(error.localizedDescription)")
+            }
         }
 
         let destination = URL(fileURLWithPath: config.directory, isDirectory: true)

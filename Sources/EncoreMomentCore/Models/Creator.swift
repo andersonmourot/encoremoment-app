@@ -5,7 +5,7 @@ public struct Creator: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     /// Human-readable name shown on the profile, e.g. "Aurora Live".
     public var displayName: String
-    /// Unique, URL-safe handle (without the leading `@`), e.g. "auroralive".
+    /// Unique, URL-safe handle (without the leading `@`), e.g. "AuroraLive".
     public var handle: String
     public var bio: String?
     public var avatarURL: URL?
@@ -39,14 +39,15 @@ public struct Creator: Identifiable, Codable, Hashable, Sendable {
 }
 
 public extension Creator {
-    /// Validates a handle: 3–30 chars, lowercase letters, digits and underscores only.
+    /// Validates a handle: 3–30 chars, ASCII letters, digits and underscores only.
+    /// Matching against other handles is always case-insensitive.
     static func isValidHandle(_ handle: String) -> Bool {
         guard (3...30).contains(handle.count) else { return false }
-        return handle.allSatisfy { $0.isLowercaseASCIILetter || $0.isASCIIDigit || $0 == "_" }
+        return handle.allSatisfy { $0.isASCIILetter || $0.isASCIIDigit || $0 == "_" }
     }
 }
 
 private extension Character {
-    var isLowercaseASCIILetter: Bool { self >= "a" && self <= "z" }
+    var isASCIILetter: Bool { (self >= "a" && self <= "z") || (self >= "A" && self <= "Z") }
     var isASCIIDigit: Bool { self >= "0" && self <= "9" }
 }

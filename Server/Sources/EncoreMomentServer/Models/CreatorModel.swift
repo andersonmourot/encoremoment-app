@@ -50,6 +50,13 @@ final class CreatorModel: Model, @unchecked Sendable {
             joinedAt: joinedAt
         )
     }
+
+    /// Case-insensitive handle lookup — handles may contain capitals, but two
+    /// handles differing only in case are the same handle.
+    static func findByHandle(_ handle: String, on db: Database) async throws -> CreatorModel? {
+        try await CreatorModel.query(on: db).all()
+            .first { $0.handle.lowercased() == handle.lowercased() }
+    }
 }
 
 struct AddCreatorAccentColor: AsyncMigration {
@@ -64,6 +71,24 @@ struct AddCreatorAccentColor: AsyncMigration {
 
     func revert(on database: Database) async throws {
         // SQLite cannot drop columns on older versions; keep the additive column.
+    }
+}
+
+/// Handles are unique case-insensitively — the column-level UNIQUE constraint
+/// is binary (case-sensitive), so enforce it with an expression index.
+struct AddCreatorHandleCaseIndex: AsyncMigration {
+    var name: String { "AddCreatorHandleCaseIndex" }
+    func prepare(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        try await sql.raw("""
+        CREATE UNIQUE INDEX creators_handle_nocase
+        ON \(unsafeRaw: CreatorModel.schema) (LOWER(handle))
+        """).run()
+    }
+
+    func revert(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        try await sql.raw("DROP INDEX IF EXISTS creators_handle_nocase").run()
     }
 }
 

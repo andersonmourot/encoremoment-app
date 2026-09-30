@@ -28,12 +28,12 @@ struct CreateEventView: View {
                         .lineLimit(3...6)
                 }
                 Section {
-                    Toggle("Let fans add media", isOn: $allowsCommunityUploads)
+                    Toggle("Public Collaboration", isOn: $allowsCommunityUploads)
                 } footer: {
-                    Text("When enabled, signed-in users can add their own photos and videos to this event.")
+                    Text("When enabled, users can add their own photos and videos to this event.")
                 }
                 Section {
-                    Toggle("Invite only", isOn: $inviteOnly)
+                    Toggle("Invite Only", isOn: $inviteOnly)
                 } footer: {
                     Text("Only you and people you invite can see this event. Manage invited viewers and collaborators from the event page.")
                 }

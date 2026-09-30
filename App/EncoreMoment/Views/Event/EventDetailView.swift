@@ -74,7 +74,7 @@ struct EventDetailView: View {
                             Label(location, systemImage: "mappin.and.ellipse")
                         }
                         if liveEvent.inviteOnly {
-                            Label("Invite only", systemImage: "lock")
+                            Label("Invite Only", systemImage: "lock")
                         }
                     }
                     .font(.subheadline)

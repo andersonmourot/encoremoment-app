@@ -58,12 +58,12 @@ struct AuthController: RouteCollection {
             throw Abort(.unprocessableEntity, reason: "Password must be at least 8 characters.")
         }
         guard Creator.isValidHandle(body.handle) else {
-            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 lowercase letters, digits or underscores.")
+            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 letters, digits or underscores.")
         }
         guard try await UserModel.query(on: req.db).filter(\.$email == email).first() == nil else {
             throw Abort(.conflict, reason: "An account with that email already exists.")
         }
-        guard try await CreatorModel.query(on: req.db).filter(\.$handle == body.handle).first() == nil else {
+        guard try await CreatorModel.findByHandle(body.handle, on: req.db) == nil else {
             throw Abort(.conflict, reason: "That handle is taken.")
         }
 
@@ -113,12 +113,12 @@ struct AuthController: RouteCollection {
             return try await makeResponse(for: user, creator: existing, req: req)
         }
         guard Creator.isValidHandle(body.handle) else {
-            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 lowercase letters, digits or underscores.")
+            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 letters, digits or underscores.")
         }
         guard !body.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Abort(.unprocessableEntity, reason: "Display name is required.")
         }
-        guard try await CreatorModel.query(on: req.db).filter(\.$handle == body.handle).first() == nil else {
+        guard try await CreatorModel.findByHandle(body.handle, on: req.db) == nil else {
             throw Abort(.conflict, reason: "That handle is taken.")
         }
 

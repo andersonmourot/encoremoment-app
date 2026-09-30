@@ -6,7 +6,7 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(Creator.isValidHandle("aurora_live"))
         XCTAssertTrue(Creator.isValidHandle("city01"))
         XCTAssertFalse(Creator.isValidHandle("ab"))            // too short
-        XCTAssertFalse(Creator.isValidHandle("Aurora"))        // uppercase
+        XCTAssertTrue(Creator.isValidHandle("Aurora_Live"))    // capitals allowed
         XCTAssertFalse(Creator.isValidHandle("has space"))     // space
         XCTAssertFalse(Creator.isValidHandle("dash-no"))       // dash
         XCTAssertFalse(Creator.isValidHandle(String(repeating: "a", count: 31)))

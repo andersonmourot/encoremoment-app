@@ -31,7 +31,6 @@ struct AuthView: View {
         handle
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
-            .lowercased()
             .replacingOccurrences(of: " ", with: "_")
     }
 
@@ -139,19 +138,18 @@ struct AuthView: View {
 
     private var handleHelpText: String {
         if handle.isEmpty {
-            return "Handle must be 3-30 characters using only lowercase letters, numbers, and underscores."
+            return "Handle must be 3-30 characters using only letters, numbers, and underscores."
         }
         if Creator.isValidHandle(normalizedHandle) {
             return "Your handle will be @\(normalizedHandle)."
         }
-        return "Use 3-30 lowercase letters, numbers, or underscores."
+        return "Use 3-30 letters, numbers, or underscores."
     }
 
     private func normalizeHandleInput(_ value: String) -> String {
         value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
-            .lowercased()
             .replacingOccurrences(of: " ", with: "_")
     }
 

@@ -36,6 +36,7 @@ public func configure(_ app: Application) async throws {
 
     app.migrations.add(CreateCreator())
     app.migrations.add(AddCreatorAccentColor())
+    app.migrations.add(AddCreatorHandleCaseIndex())
     app.migrations.add(CreateEvent())
     app.migrations.add(AddEventCommunityUploads())
     app.migrations.add(CreateMedia())

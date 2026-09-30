@@ -10,27 +10,78 @@ struct EventMembersView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var members: [EventMember] = []
-    @State private var handle = ""
+    @State private var query = ""
     @State private var role: EventMemberRole = .viewer
     @State private var isInviting = false
+
+    /// The typed handle/name with `@` and whitespace trimmed.
+    private var cleanedQuery: String {
+        query
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+    }
+
+    /// Creators matching the search text by display name or handle, excluding
+    /// the owner and people already invited.
+    private var suggestions: [Creator] {
+        let q = cleanedQuery.lowercased()
+        guard !q.isEmpty else { return [] }
+        return model.creators.filter { creator in
+            creator.id != event.creatorId
+                && !members.contains { $0.creatorID == creator.id }
+                && (creator.displayName.lowercased().contains(q) || creator.handle.lowercased().contains(q))
+        }
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    HStack {
-                        TextField("Handle (e.g. friend_name)", text: $handle)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Button(isInviting ? "Inviting…" : "Invite") { invite() }
-                            .disabled(handle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isInviting)
-                    }
+                    TextField("Search by name or handle", text: $query)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                     Picker("Access", selection: $role) {
                         ForEach(EventMemberRole.allCases) { r in
                             Text(r.displayName).tag(r)
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    ForEach(suggestions) { creator in
+                        Button {
+                            invite(creator)
+                        } label: {
+                            HStack(spacing: 10) {
+                                RemoteImage(url: creator.avatarURL)
+                                    .frame(width: 32, height: 32)
+                                    .clipShape(Circle())
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(creator.displayName)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    Text(creator.displayHandle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("Invite")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.appAccent)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .disabled(isInviting)
+                    }
+
+                    // Fallback: the text doesn't match anyone in the directory —
+                    // still allow a direct invite by exact handle.
+                    if !cleanedQuery.isEmpty,
+                       !suggestions.contains(where: { $0.handle.lowercased() == cleanedQuery.lowercased() }) {
+                        Button(isInviting ? "Inviting…" : "Invite @\(cleanedQuery)") {
+                            invite(named: cleanedQuery)
+                        }
+                        .disabled(isInviting)
+                    }
                 } header: {
                     Text("Invite someone")
                 } footer: {
@@ -89,13 +140,17 @@ struct EventMembersView: View {
         }
     }
 
-    private func invite() {
+    private func invite(_ creator: Creator) {
+        invite(named: creator.handle)
+    }
+
+    private func invite(named handle: String) {
         isInviting = true
         Task {
             defer { isInviting = false }
             if let updated = await model.inviteMember(handle: handle, role: role, to: event.id) {
                 members = updated
-                handle = ""
+                query = ""
             }
         }
     }

@@ -56,12 +56,12 @@ struct CreatorController: RouteCollection {
 
         let dto = try req.content.decode(Creator.self)
         guard Creator.isValidHandle(dto.handle) else {
-            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 lowercase letters, digits or underscores.")
+            throw Abort(.unprocessableEntity, reason: "Handle must be 3–30 letters, digits or underscores.")
         }
         guard !dto.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Abort(.unprocessableEntity, reason: "Display name is required.")
         }
-        if let taken = try await CreatorModel.query(on: req.db).filter(\.$handle == dto.handle).first(),
+        if let taken = try await CreatorModel.findByHandle(dto.handle, on: req.db),
            taken.id != existing.id {
             throw Abort(.conflict, reason: "That handle is taken.")
         }
@@ -297,9 +297,7 @@ struct EventController: RouteCollection {
         let handle = invite.handle
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
-            .lowercased()
-        guard let creator = try await CreatorModel.query(on: req.db)
-            .filter(\.$handle == handle).first() else {
+        guard let creator = try await CreatorModel.findByHandle(handle, on: req.db) else {
             throw Abort(.notFound, reason: "No creator found with handle \"\(handle)\".")
         }
         guard creator.id != event.creatorId else {

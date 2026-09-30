@@ -53,7 +53,7 @@ public struct StoreState: Codable, Sendable, Equatable {
         guard Creator.isValidHandle(creator.handle) else {
             throw EventStoreError.validation("Invalid handle: \(creator.handle)")
         }
-        if creators.values.contains(where: { $0.handle == creator.handle && $0.id != creator.id }) {
+        if creators.values.contains(where: { $0.handle.lowercased() == creator.handle.lowercased() && $0.id != creator.id }) {
             throw EventStoreError.duplicateHandle(creator.handle)
         }
         creators[creator.id] = creator
@@ -125,7 +125,7 @@ public struct StoreState: Codable, Sendable, Equatable {
     @discardableResult
     public mutating func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) throws -> [EventMember] {
         guard events[eventID] != nil else { throw EventStoreError.eventNotFound(eventID) }
-        guard let creator = creators.values.first(where: { $0.handle == handle }) else {
+        guard let creator = creators.values.first(where: { $0.handle.lowercased() == handle.lowercased() }) else {
             throw EventStoreError.validation("No creator found with handle \"\(handle)\".")
         }
         guard creator.id != events[eventID]?.creatorId else {
