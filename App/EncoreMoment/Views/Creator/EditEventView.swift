@@ -13,6 +13,7 @@ struct EditEventView: View {
     @State private var date: Date
     @State private var isPublished: Bool
     @State private var allowsCommunityUploads: Bool
+    @State private var inviteOnly: Bool
 
     init(event: Event) {
         self.event = event
@@ -22,6 +23,7 @@ struct EditEventView: View {
         _date = State(initialValue: event.date)
         _isPublished = State(initialValue: event.isPublished)
         _allowsCommunityUploads = State(initialValue: event.allowsCommunityUploads)
+        _inviteOnly = State(initialValue: event.inviteOnly)
     }
 
     private var canSave: Bool { Event.isValidTitle(title) }
@@ -48,6 +50,11 @@ struct EditEventView: View {
                 } footer: {
                     Text("When enabled, signed-in users can add their own photos and videos to this event.")
                 }
+                Section {
+                    Toggle("Invite only", isOn: $inviteOnly)
+                } footer: {
+                    Text("Only you and people you invite can see this event. Manage invited viewers and collaborators from the event page.")
+                }
             }
             .navigationTitle("Edit Event")
             .navigationBarTitleDisplayMode(.inline)
@@ -65,6 +72,7 @@ struct EditEventView: View {
                             updated.date = date
                             updated.isPublished = isPublished
                             updated.allowsCommunityUploads = allowsCommunityUploads
+                            updated.inviteOnly = inviteOnly
                             await model.updateEvent(updated)
                             dismiss()
                         }

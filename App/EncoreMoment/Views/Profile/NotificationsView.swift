@@ -81,6 +81,7 @@ private extension AppNotificationKind {
         case .like: "hand.thumbsup"
         case .follow: "person.crop.circle.badge.plus"
         case .mediaUpload: "photo.badge.plus"
+        case .invite: "envelope.badge"
         }
     }
 }

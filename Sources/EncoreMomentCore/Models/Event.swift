@@ -17,6 +17,10 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
     public var isPublished: Bool
     /// Whether signed-in viewers can contribute their own media to this event.
     public var allowsCommunityUploads: Bool
+    /// Whether only the owner and invited members can view this event.
+    /// Invited collaborators can always upload regardless of
+    /// `allowsCommunityUploads`.
+    public var inviteOnly: Bool
     public var media: [MediaItem]
 
     public init(
@@ -30,6 +34,7 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         createdAt: Date = Date(),
         isPublished: Bool = true,
         allowsCommunityUploads: Bool = false,
+        inviteOnly: Bool = false,
         media: [MediaItem] = []
     ) {
         self.id = id
@@ -42,12 +47,13 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.isPublished = isPublished
         self.allowsCommunityUploads = allowsCommunityUploads
+        self.inviteOnly = inviteOnly
         self.media = media
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, creatorId, title, details, coverImageURL, location, date, createdAt
-        case isPublished, allowsCommunityUploads, media
+        case isPublished, allowsCommunityUploads, inviteOnly, media
     }
 
     public init(from decoder: Decoder) throws {
@@ -62,6 +68,7 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isPublished = try container.decode(Bool.self, forKey: .isPublished)
         allowsCommunityUploads = try container.decodeIfPresent(Bool.self, forKey: .allowsCommunityUploads) ?? false
+        inviteOnly = try container.decodeIfPresent(Bool.self, forKey: .inviteOnly) ?? false
         media = try container.decodeIfPresent([MediaItem].self, forKey: .media) ?? []
     }
 
@@ -77,6 +84,7 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(isPublished, forKey: .isPublished)
         try container.encode(allowsCommunityUploads, forKey: .allowsCommunityUploads)
+        try container.encode(inviteOnly, forKey: .inviteOnly)
         try container.encode(media, forKey: .media)
     }
 

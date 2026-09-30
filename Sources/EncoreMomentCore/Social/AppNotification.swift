@@ -5,6 +5,7 @@ public enum AppNotificationKind: String, Codable, Sendable, CaseIterable {
     case like
     case follow
     case mediaUpload
+    case invite
 }
 
 public struct AppNotification: Identifiable, Codable, Sendable, Equatable {

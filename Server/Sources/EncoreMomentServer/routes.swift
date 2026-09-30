@@ -86,6 +86,10 @@ struct EventController: RouteCollection {
         protected.post(":id", "uploads", use: uploadMedia)
         protected.post(":id", "media", use: addMedia)
         protected.delete(":id", "media", ":mediaId", use: removeMedia)
+        protected.get(":id", "members", use: listMembers)
+        protected.post(":id", "members", use: inviteMember)
+        protected.delete(":id", "members", ":creatorId", use: removeMember)
+        protected.get(":id", "membership", use: myMembership)
     }
 
     func index(req: Request) async throws -> [Event] {
@@ -100,11 +104,27 @@ struct EventController: RouteCollection {
         if !blocked.isEmpty {
             query = query.filter(\.$creatorId !~ Array(blocked))
         }
-        return try await query.sort(\.$date, .descending).all().map { $0.toDTO() }
+        var events = try await query.sort(\.$date, .descending).all()
+        // Invite-only events are visible to their owner and invited members.
+        if events.contains(where: \.inviteOnly) {
+            let creatorId = req.auth.get(UserToken.self)?.creatorId
+            var memberEventIds = Set<UUID>()
+            if let creatorId {
+                memberEventIds = try await EventAccess.memberEventIDs(for: creatorId, on: req.db)
+            }
+            events = events.filter {
+                !$0.inviteOnly || $0.creatorId == creatorId || memberEventIds.contains($0.id ?? UUID())
+            }
+        }
+        return events.map { $0.toDTO() }
     }
 
     func show(req: Request) async throws -> Event {
-        var dto = try await loadEvent(req).toDTO()
+        let model = try await loadEvent(req)
+        guard try await EventAccess.canView(model, on: req) else {
+            throw Abort(.forbidden, reason: "This event is invite-only.")
+        }
+        var dto = model.toDTO()
         let blockedUsers = try await Moderation.blockedUserIDs(for: req)
         if !blockedUsers.isEmpty {
             dto.media = dto.media.filter {
@@ -169,12 +189,13 @@ struct EventController: RouteCollection {
     func addMedia(req: Request) async throws -> MediaItem {
         let token = try req.auth.require(UserToken.self)
         guard let eventId = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
-        try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
+        let event = try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
         var dto = try req.content.decode(MediaItem.self)
         dto.sortOrder = try await Self.nextSortOrder(eventId, on: req.db)
         let uploaderID = try token.requireUserID()
         dto.uploaderID = uploaderID
         dto.uploaderName = try await Self.displayName(for: uploaderID, on: req.db)
+        dto.isOfficial = try await EventAccess.isOfficialUploader(event, token: token, on: req.db)
         let media = MediaModel(from: dto)
         media.$event.id = eventId
         try await media.create(on: req.db)
@@ -185,7 +206,7 @@ struct EventController: RouteCollection {
     func uploadMedia(req: Request) async throws -> MediaItem {
         let token = try req.auth.require(UserToken.self)
         guard let eventId = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
-        try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
+        let event = try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
 
         let body = try req.content.decode(MediaUploadRequest.self)
         let mediaURL = try await UploadStorage.save(
@@ -207,6 +228,7 @@ struct EventController: RouteCollection {
             thumbnailURL: thumbnailURL ?? (body.kind == .photo ? mediaURL : nil),
             uploaderID: uploaderID,
             uploaderName: try await Self.displayName(for: uploaderID, on: req.db),
+            isOfficial: try await EventAccess.isOfficialUploader(event, token: token, on: req.db),
             sortOrder: try await Self.nextSortOrder(eventId, on: req.db)
         )
         let media = MediaModel(from: dto)
@@ -237,7 +259,120 @@ struct EventController: RouteCollection {
         return .noContent
     }
 
+    // MARK: Members (invited viewers & collaborators)
+
+    /// Full member list — owner only.
+    func listMembers(req: Request) async throws -> [EventMember] {
+        let token = try req.auth.require(UserToken.self)
+        let event = try await Self.requireExistingEvent(try eventIdParam(req), on: req.db)
+        guard token.creatorId == event.creatorId else { throw Abort(.forbidden) }
+        return try await Self.memberDTOs(eventId: try event.requireID(), on: req.db)
+    }
+
+    /// The caller's own membership — used by the app to decide whether the
+    /// viewer may upload. `member` is nil for non-members (including the owner,
+    /// who already has full access).
+    func myMembership(req: Request) async throws -> EventMembershipResponse {
+        let token = try req.auth.require(UserToken.self)
+        let event = try await Self.requireExistingEvent(try eventIdParam(req), on: req.db)
+        guard let creatorId = token.creatorId else { return EventMembershipResponse(member: nil) }
+        guard let row = try await EventMemberModel.query(on: req.db)
+            .filter(\.$eventId == event.requireID())
+            .filter(\.$creatorId == creatorId)
+            .first() else {
+            return EventMembershipResponse(member: nil)
+        }
+        guard let creator = try await CreatorModel.find(row.creatorId, on: req.db) else {
+            return EventMembershipResponse(member: nil)
+        }
+        return EventMembershipResponse(member: Self.memberDTO(row, creator: creator))
+    }
+
+    /// Invites a creator by handle as a viewer or collaborator (owner only).
+    /// Re-inviting an existing member updates their role.
+    func inviteMember(req: Request) async throws -> [EventMember] {
+        let token = try req.auth.require(UserToken.self)
+        let event = try await Self.requireOwnedEvent(try eventIdParam(req), token: token, on: req.db)
+        let invite = try req.content.decode(EventInviteRequest.self)
+        let handle = invite.handle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+        guard let creator = try await CreatorModel.query(on: req.db)
+            .filter(\.$handle == handle).first() else {
+            throw Abort(.notFound, reason: "No creator found with handle \"\(handle)\".")
+        }
+        guard creator.id != event.creatorId else {
+            throw Abort(.badRequest, reason: "The event's owner can't be invited.")
+        }
+        let eventId = try event.requireID()
+        let creatorId = try creator.requireID()
+        if let existing = try await EventMemberModel.query(on: req.db)
+            .filter(\.$eventId == eventId).filter(\.$creatorId == creatorId).first() {
+            existing.role = invite.role.rawValue
+            try await existing.save(on: req.db)
+        } else {
+            try await EventMemberModel(eventId: eventId, creatorId: creatorId, role: invite.role)
+                .create(on: req.db)
+            let ownerName = try await Self.creatorName(for: event.creatorId, on: req.db)
+            let action = invite.role == .collaborator ? "collaborate on" : "view"
+            try await NotificationCenter.notifyCreator(
+                creatorId: creatorId,
+                kind: .invite,
+                title: "Event invite",
+                body: "\(ownerName) invited you to \(action) \(event.title).",
+                eventId: eventId,
+                on: req.db
+            )
+        }
+        return try await Self.memberDTOs(eventId: eventId, on: req.db)
+    }
+
+    /// Removes an invited member — the owner, or the member removing themselves.
+    func removeMember(req: Request) async throws -> [EventMember] {
+        let token = try req.auth.require(UserToken.self)
+        let event = try await Self.requireExistingEvent(try eventIdParam(req), on: req.db)
+        guard let creatorId = req.parameters.get("creatorId", as: UUID.self) else { throw Abort(.badRequest) }
+        guard token.creatorId == event.creatorId || token.creatorId == creatorId else {
+            throw Abort(.forbidden)
+        }
+        try await EventMemberModel.query(on: req.db)
+            .filter(\.$eventId == event.requireID()).filter(\.$creatorId == creatorId).delete()
+        return try await Self.memberDTOs(eventId: try event.requireID(), on: req.db)
+    }
+
     // MARK: Helpers
+
+    private func eventIdParam(_ req: Request) throws -> UUID {
+        guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
+        return id
+    }
+
+    private static func memberDTO(_ row: EventMemberModel, creator: CreatorModel) -> EventMember {
+        EventMember(
+            id: (try? row.requireID()) ?? UUID(),
+            eventID: row.eventId,
+            creatorID: row.creatorId,
+            role: row.memberRole,
+            displayName: creator.displayName,
+            handle: creator.handle
+        )
+    }
+
+    private static func memberDTOs(eventId: UUID, on db: Database) async throws -> [EventMember] {
+        let rows = try await EventMemberModel.query(on: db).filter(\.$eventId == eventId).all()
+        var result: [EventMember] = []
+        for row in rows {
+            if let creator = try await CreatorModel.find(row.creatorId, on: db) {
+                result.append(memberDTO(row, creator: creator))
+            }
+        }
+        return result.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    private static func creatorName(for creatorId: UUID, on db: Database) async throws -> String {
+        try await CreatorModel.find(creatorId, on: db)?.displayName ?? "Someone"
+    }
 
     private func loadEvent(_ req: Request) async throws -> EventModel {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
@@ -257,13 +392,15 @@ struct EventController: RouteCollection {
         return model
     }
 
-    private static func requireMediaUploadAllowed(_ id: UUID, token: UserToken, on db: Database) async throws {
+    /// Loads the event and asserts the token's user may add media to it
+    /// (owner, invited collaborator, or anyone when community uploads are on).
+    private static func requireMediaUploadAllowed(_ id: UUID, token: UserToken, on db: Database) async throws -> EventModel {
         _ = try token.requireUserID()
         guard let model = try await EventModel.find(id, on: db) else { throw Abort(.notFound) }
-        if token.creatorId == model.creatorId { return }
-        guard model.allowsCommunityUploads else {
-            throw Abort(.forbidden, reason: "This event does not allow community media uploads.")
+        guard try await EventAccess.canUpload(model, token: token, on: db) else {
+            throw Abort(.forbidden, reason: "You don't have permission to add media to this event.")
         }
+        return model
     }
 
     private static func nextSortOrder(_ eventId: UUID, on db: Database) async throws -> Int {
@@ -284,11 +421,12 @@ struct EventController: RouteCollection {
     private static func notifyCommunityUploadIfNeeded(_ eventId: UUID, token: UserToken, on db: Database) async throws {
         guard let event = try await EventModel.find(eventId, on: db),
               token.creatorId != event.creatorId else { return }
+        let name = try await NotificationCenter.actorName(for: token.requireUserID(), on: db)
         try await NotificationCenter.notifyCreator(
             creatorId: event.creatorId,
             kind: .mediaUpload,
             title: "New media added",
-            body: "Someone added media to \(event.title).",
+            body: "\(name) added media to \(event.title).",
             eventId: eventId,
             on: db
         )

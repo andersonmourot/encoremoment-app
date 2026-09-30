@@ -16,6 +16,7 @@ final class EventModel: Model, @unchecked Sendable {
     @Field(key: "created_at") var createdAt: Date
     @Field(key: "is_published") var isPublished: Bool
     @Field(key: "allows_community_uploads") var allowsCommunityUploads: Bool
+    @Field(key: "invite_only") var inviteOnly: Bool
     @Children(for: \.$event) var media: [MediaModel]
 
     init() {}
@@ -31,6 +32,7 @@ final class EventModel: Model, @unchecked Sendable {
         self.createdAt = event.createdAt
         self.isPublished = event.isPublished
         self.allowsCommunityUploads = event.allowsCommunityUploads
+        self.inviteOnly = event.inviteOnly
     }
 
     func applyFields(_ event: Event) {
@@ -42,6 +44,7 @@ final class EventModel: Model, @unchecked Sendable {
         self.date = event.date
         self.isPublished = event.isPublished
         self.allowsCommunityUploads = event.allowsCommunityUploads
+        self.inviteOnly = event.inviteOnly
     }
 
     /// Maps to the Core DTO. `media` must be eager-loaded by the caller.
@@ -57,6 +60,7 @@ final class EventModel: Model, @unchecked Sendable {
             createdAt: createdAt,
             isPublished: isPublished,
             allowsCommunityUploads: allowsCommunityUploads,
+            inviteOnly: inviteOnly,
             media: ($media.value ?? [])
                 .map { $0.toDTO() }
                 .sorted {
@@ -74,6 +78,21 @@ struct AddEventCommunityUploads: AsyncMigration {
         try await sql.raw("""
         ALTER TABLE \(unsafeRaw: EventModel.schema)
         ADD COLUMN allows_community_uploads BOOLEAN NOT NULL DEFAULT false
+        """).run()
+    }
+
+    func revert(on database: Database) async throws {
+        // SQLite cannot drop columns on older versions; keep the additive column.
+    }
+}
+
+struct AddEventInviteOnly: AsyncMigration {
+    var name: String { "AddEventInviteOnly" }
+    func prepare(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        try await sql.raw("""
+        ALTER TABLE \(unsafeRaw: EventModel.schema)
+        ADD COLUMN invite_only BOOLEAN NOT NULL DEFAULT false
         """).run()
     }
 

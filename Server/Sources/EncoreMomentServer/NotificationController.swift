@@ -69,4 +69,15 @@ enum NotificationCenter {
             creatorId: creatorId
         ).create(on: db)
     }
+
+    /// Display name for the user who triggered a notification — their creator
+    /// profile name when present, otherwise the local part of their email.
+    static func actorName(for userId: UUID, on db: Database) async throws -> String {
+        guard let user = try await UserModel.find(userId, on: db) else { return "Someone" }
+        if let creatorId = user.creatorId,
+           let creator = try await CreatorModel.find(creatorId, on: db) {
+            return creator.displayName
+        }
+        return String(user.email.prefix(while: { $0 != "@" }))
+    }
 }

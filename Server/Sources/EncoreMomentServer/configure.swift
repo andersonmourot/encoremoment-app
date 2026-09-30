@@ -53,6 +53,9 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateMediaLike())
     app.migrations.add(CreateReport())
     app.migrations.add(CreateNotification())
+    app.migrations.add(AddEventInviteOnly())
+    app.migrations.add(AddMediaOfficial())
+    app.migrations.add(CreateEventMember())
 
     // The InTheMomentServer -> EncoreMomentServer module rename changed the
     // qualified names Fluent recorded in _fluent_migrations, so an existing

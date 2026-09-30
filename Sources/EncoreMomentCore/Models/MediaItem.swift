@@ -24,6 +24,9 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     public var durationSeconds: Double?
     /// Whether viewers are allowed to download this item to their device.
     public var isDownloadable: Bool
+    /// Whether the item was uploaded by the event's owner or an invited
+    /// collaborator (shown in the "official" section rather than "community").
+    public var isOfficial: Bool
     /// Display order within the event gallery.
     public var sortOrder: Int
     public let createdAt: Date
@@ -41,6 +44,7 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         height: Int? = nil,
         durationSeconds: Double? = nil,
         isDownloadable: Bool = true,
+        isOfficial: Bool = false,
         sortOrder: Int = 0,
         createdAt: Date = Date()
     ) {
@@ -56,13 +60,14 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         self.height = height
         self.durationSeconds = durationSeconds
         self.isDownloadable = isDownloadable
+        self.isOfficial = isOfficial
         self.sortOrder = sortOrder
         self.createdAt = createdAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, eventId, kind, url, thumbnailURL, caption, uploaderID, uploaderName, width, height
-        case durationSeconds, isDownloadable, sortOrder, createdAt
+        case durationSeconds, isDownloadable, isOfficial, sortOrder, createdAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,6 +84,7 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         height = try container.decodeIfPresent(Int.self, forKey: .height)
         durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
         isDownloadable = try container.decodeIfPresent(Bool.self, forKey: .isDownloadable) ?? true
+        isOfficial = try container.decodeIfPresent(Bool.self, forKey: .isOfficial) ?? false
         sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
@@ -97,6 +103,7 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         try container.encodeIfPresent(height, forKey: .height)
         try container.encodeIfPresent(durationSeconds, forKey: .durationSeconds)
         try container.encode(isDownloadable, forKey: .isDownloadable)
+        try container.encode(isOfficial, forKey: .isOfficial)
         try container.encode(sortOrder, forKey: .sortOrder)
         try container.encode(createdAt, forKey: .createdAt)
     }

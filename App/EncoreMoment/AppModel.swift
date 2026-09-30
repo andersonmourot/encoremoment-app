@@ -229,7 +229,8 @@ final class AppModel: ObservableObject {
         details: String?,
         location: String?,
         date: Date,
-        allowsCommunityUploads: Bool = false
+        allowsCommunityUploads: Bool = false,
+        inviteOnly: Bool = false
     ) async {
         guard let creator = currentCreator else { return }
         let event = Event(
@@ -238,7 +239,8 @@ final class AppModel: ObservableObject {
             details: details?.nilIfBlank,
             location: location?.nilIfBlank,
             date: date,
-            allowsCommunityUploads: allowsCommunityUploads
+            allowsCommunityUploads: allowsCommunityUploads,
+            inviteOnly: inviteOnly
         )
         await perform { try await self.store.createEvent(event) }
     }
@@ -361,6 +363,52 @@ final class AppModel: ObservableObject {
             return copy
         }
         await updateEvent(event)
+    }
+
+    // MARK: Event members (invited viewers & collaborators)
+
+    /// The invited-member list of an owned event (empty on failure).
+    func eventMembers(forEvent eventID: UUID) async -> [EventMember] {
+        (try? await store.members(of: eventID)) ?? []
+    }
+
+    /// The signed-in viewer's role on this event, if they were invited.
+    func myMembership(in eventID: UUID) async -> EventMemberRole? {
+        try? await store.myMembership(in: eventID)
+    }
+
+    /// Whether the signed-in viewer may add media to this event: the owner, an
+    /// invited collaborator, or anyone when community uploads are enabled.
+    func canAddMedia(to event: Event) async -> Bool {
+        guard isAccountSignedIn else { return false }
+        if currentCreator?.id == event.creatorId { return true }
+        if event.allowsCommunityUploads { return true }
+        return (try? await store.myMembership(in: event.id))?.canUpload ?? false
+    }
+
+    /// Invites (or re-roles) a creator by handle. Returns the updated member
+    /// list; on failure surfaces `errorMessage` and returns nil.
+    func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) async -> [EventMember]? {
+        let cleaned = handle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased()
+        guard !cleaned.isEmpty else { return nil }
+        do {
+            return try await store.inviteMember(handle: cleaned, role: role, to: eventID)
+        } catch {
+            errorMessage = "Couldn't invite \"\(cleaned)\". Check the handle and try again."
+            return nil
+        }
+    }
+
+    func removeMember(_ member: EventMember, from eventID: UUID) async -> [EventMember]? {
+        do {
+            return try await store.removeMember(creatorID: member.creatorID, from: eventID)
+        } catch {
+            errorMessage = "Couldn't remove this member. Please try again."
+            return nil
+        }
     }
 
     /// Resolves and presents an event opened via a ``DeepLink`` URL.

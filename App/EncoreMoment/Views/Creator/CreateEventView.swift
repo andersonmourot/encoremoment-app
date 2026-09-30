@@ -11,6 +11,7 @@ struct CreateEventView: View {
     @State private var location = ""
     @State private var date = Date()
     @State private var allowsCommunityUploads = false
+    @State private var inviteOnly = false
 
     private var canSave: Bool { Event.isValidTitle(title) }
 
@@ -31,6 +32,11 @@ struct CreateEventView: View {
                 } footer: {
                     Text("When enabled, signed-in users can add their own photos and videos to this event.")
                 }
+                Section {
+                    Toggle("Invite only", isOn: $inviteOnly)
+                } footer: {
+                    Text("Only you and people you invite can see this event. Manage invited viewers and collaborators from the event page.")
+                }
             }
             .navigationTitle("New Event")
             .navigationBarTitleDisplayMode(.inline)
@@ -46,7 +52,8 @@ struct CreateEventView: View {
                                 details: details,
                                 location: location,
                                 date: date,
-                                allowsCommunityUploads: allowsCommunityUploads
+                                allowsCommunityUploads: allowsCommunityUploads,
+                                inviteOnly: inviteOnly
                             )
                             dismiss()
                         }

@@ -80,7 +80,7 @@ final class AppSettings: ObservableObject {
 
     init() {
         let raw = UserDefaults.standard.string(forKey: AppTheme.storageKey)
-        self.theme = raw.flatMap(AppTheme.init(rawValue:)) ?? .light
+        self.theme = raw.flatMap(AppTheme.init(rawValue:)) ?? .dark
     }
 }
 

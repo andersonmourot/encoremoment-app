@@ -18,6 +18,7 @@ final class MediaModel: Model, @unchecked Sendable {
     @OptionalField(key: "height") var height: Int?
     @OptionalField(key: "duration_seconds") var durationSeconds: Double?
     @Field(key: "is_downloadable") var isDownloadable: Bool
+    @Field(key: "is_official") var isOfficial: Bool
     @Field(key: "sort_order") var sortOrder: Int
     @Field(key: "created_at") var createdAt: Date
 
@@ -36,6 +37,7 @@ final class MediaModel: Model, @unchecked Sendable {
         self.height = item.height
         self.durationSeconds = item.durationSeconds
         self.isDownloadable = item.isDownloadable
+        self.isOfficial = item.isOfficial
         self.sortOrder = item.sortOrder
         self.createdAt = item.createdAt
     }
@@ -54,6 +56,7 @@ final class MediaModel: Model, @unchecked Sendable {
             height: height,
             durationSeconds: durationSeconds,
             isDownloadable: isDownloadable,
+            isOfficial: isOfficial,
             sortOrder: sortOrder,
             createdAt: createdAt
         )
@@ -85,6 +88,31 @@ struct AddMediaUploader: AsyncMigration {
 
     func revert(on database: Database) async throws {
         // SQLite cannot drop columns on older versions; keep additive columns.
+    }
+}
+
+struct AddMediaOfficial: AsyncMigration {
+    var name: String { "AddMediaOfficial" }
+    func prepare(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        try await sql.raw("""
+        ALTER TABLE \(unsafeRaw: MediaModel.schema)
+        ADD COLUMN is_official BOOLEAN NOT NULL DEFAULT false
+        """).run()
+        // Backfill: anything uploaded by the event owner's account is official.
+        try await sql.raw("""
+        UPDATE \(unsafeRaw: MediaModel.schema) SET is_official = 1
+        WHERE EXISTS (
+            SELECT 1 FROM \(unsafeRaw: EventModel.schema) e
+            JOIN \(unsafeRaw: UserModel.schema) u ON u.creator_id = e.creator_id
+            WHERE e.id = \(unsafeRaw: MediaModel.schema).event_id
+              AND u.id = \(unsafeRaw: MediaModel.schema).uploader_id
+        )
+        """).run()
+    }
+
+    func revert(on database: Database) async throws {
+        // SQLite cannot drop columns on older versions; keep the additive column.
     }
 }
 

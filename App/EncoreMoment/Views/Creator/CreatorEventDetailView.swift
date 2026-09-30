@@ -10,6 +10,7 @@ struct CreatorEventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingEdit = false
     @State private var showingManageMedia = false
+    @State private var showingMembers = false
     @State private var showingDeleteConfirmation = false
     @State private var selectedMedia: MediaItem?
     @State private var mediaPendingRemoval: MediaItem?
@@ -65,6 +66,7 @@ struct CreatorEventDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { showingEdit = true } label: { Label("Edit details", systemImage: "pencil") }
+                    Button { showingMembers = true } label: { Label("Manage people", systemImage: "person.2") }
                     if !liveEvent.media.isEmpty {
                         Button { showingManageMedia = true } label: { Label("Manage media", systemImage: "rectangle.stack") }
                     }
@@ -95,6 +97,9 @@ struct CreatorEventDetailView: View {
         }
         .sheet(isPresented: $showingManageMedia) {
             ManageMediaView(event: liveEvent)
+        }
+        .sheet(isPresented: $showingMembers) {
+            EventMembersView(event: liveEvent)
         }
         .photosPicker(
             isPresented: $showingMediaPicker,
@@ -204,6 +209,9 @@ struct CreatorEventDetailView: View {
                 Label(liveEvent.date.eventDayString, systemImage: "calendar")
                 if let location = liveEvent.location {
                     Label(location, systemImage: "mappin.and.ellipse")
+                }
+                if liveEvent.inviteOnly {
+                    Label("Invite only", systemImage: "lock")
                 }
             }
             .font(.subheadline)

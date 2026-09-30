@@ -18,11 +18,20 @@ struct EventDetailView: View {
     @State private var reportTarget: ReportTarget?
     @State private var mediaPendingRemoval: MediaItem?
     @State private var mediaLikes: [UUID: LikeSummary] = [:]
+    /// The signed-in viewer's invited role on this event, if any.
+    @State private var membership: EventMemberRole?
 
     /// Always read the freshest copy from the model so newly added media appears.
     private var liveEvent: Event { model.event(id: event.id) ?? event }
 
     private var isFavorite: Bool { model.isFavorite(liveEvent.id) }
+    private var isOwner: Bool { model.currentCreator?.id == liveEvent.creatorId }
+
+    /// The owner, invited collaborators, and (when enabled) any signed-in user
+    /// may add media. Viewers cannot.
+    private var canUploadMedia: Bool {
+        isOwner || liveEvent.allowsCommunityUploads || membership?.canUpload == true
+    }
 
     private var rankedMedia: [MediaItem] {
         liveEvent.media.sorted {
@@ -32,6 +41,11 @@ struct EventDetailView: View {
             return left > right
         }
     }
+
+    /// Uploads by the owner and invited collaborators.
+    private var officialMedia: [MediaItem] { rankedMedia.filter(\.isOfficial) }
+    /// Media contributed by the community.
+    private var communityMedia: [MediaItem] { rankedMedia.filter { !$0.isOfficial } }
 
     var body: some View {
         ScrollView {
@@ -59,6 +73,9 @@ struct EventDetailView: View {
                         if let location = liveEvent.location {
                             Label(location, systemImage: "mappin.and.ellipse")
                         }
+                        if liveEvent.inviteOnly {
+                            Label("Invite only", systemImage: "lock")
+                        }
                     }
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -85,7 +102,7 @@ struct EventDetailView: View {
 
                 Divider()
 
-                if liveEvent.allowsCommunityUploads {
+                if canUploadMedia {
                     Button {
                         if model.isAccountSignedIn {
                             showingMediaPicker = true
@@ -111,12 +128,10 @@ struct EventDetailView: View {
                     )
                     .frame(height: 200)
                 } else {
-                    MediaGridView(
-                        media: rankedMedia,
-                        onTap: { selectedMedia = $0 },
-                        canDelete: { model.canDeleteMedia($0, in: liveEvent) },
-                        onDelete: { mediaPendingRemoval = $0 }
-                    )
+                    mediaSection(title: "Official", media: officialMedia)
+                    if !communityMedia.isEmpty || liveEvent.allowsCommunityUploads {
+                        mediaSection(title: "Community", media: communityMedia)
+                    }
                 }
 
                 Divider()
@@ -130,6 +145,9 @@ struct EventDetailView: View {
         .task(id: liveEvent.id) {
             await model.recordView(liveEvent.id)
             likeSummary = await model.likeSummary(forEvent: liveEvent.id)
+            if model.isAccountSignedIn {
+                membership = await model.myMembership(in: liveEvent.id)
+            }
             await loadMediaLikes()
         }
         .toolbar {
@@ -214,6 +232,28 @@ struct EventDetailView: View {
             Button("OK", role: .cancel) { downloadMessage = nil }
         } message: {
             Text(downloadMessage ?? "")
+        }
+    }
+
+    /// A labeled media section (Official or Community) with its grid.
+    private func mediaSection(title: String, media: [MediaItem]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            if media.isEmpty {
+                Text(title == "Official"
+                     ? "The creator hasn't added media yet."
+                     : "No community uploads yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                MediaGridView(
+                    media: media,
+                    onTap: { selectedMedia = $0 },
+                    canDelete: { model.canDeleteMedia($0, in: liveEvent) },
+                    onDelete: { mediaPendingRemoval = $0 }
+                )
+            }
         }
     }
 

@@ -14,3 +14,6 @@ extension LikeSummary: Content {}
 extension ReportRequest: Content {}
 extension Report: Content {}
 extension AppNotification: Content {}
+extension EventMember: Content {}
+extension EventMembershipResponse: Content {}
+extension EventInviteRequest: Content {}

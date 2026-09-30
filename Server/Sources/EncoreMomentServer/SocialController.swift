@@ -32,6 +32,7 @@ struct SocialController: RouteCollection {
 
     func listComments(req: Request) async throws -> [Comment] {
         let eventId = try id(req)
+        _ = try await requireViewableEvent(eventId, req)
         var query = CommentModel.query(on: req.db)
             .filter(\.$eventId == eventId)
         let blockedUsers = try await Moderation.blockedUserIDs(for: req)
@@ -48,7 +49,7 @@ struct SocialController: RouteCollection {
         let token = try req.auth.require(UserToken.self)
         let userId = try token.requireUserID()
         let eventId = try id(req)
-        guard let event = try await EventModel.find(eventId, on: req.db) else { throw Abort(.notFound) }
+        let event = try await requireViewableEvent(eventId, req)
 
         let text = try req.content.decode(CommentBody.self).body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard Comment.isValidBody(text) else {
@@ -75,6 +76,7 @@ struct SocialController: RouteCollection {
         let token = try req.auth.require(UserToken.self)
         let userId = try token.requireUserID()
         let eventId = try id(req)
+        _ = try await requireViewableEvent(eventId, req)
         guard let commentId = req.parameters.get("commentId", as: UUID.self) else { throw Abort(.badRequest) }
         guard let comment = try await CommentModel.find(commentId, on: req.db), comment.eventId == eventId else {
             throw Abort(.notFound)
@@ -95,7 +97,7 @@ struct SocialController: RouteCollection {
 
     func likeSummary(req: Request) async throws -> LikeSummary {
         let eventId = try id(req)
-        guard try await EventModel.find(eventId, on: req.db) != nil else { throw Abort(.notFound) }
+        _ = try await requireViewableEvent(eventId, req)
         let viewerId = req.auth.get(UserToken.self)?.userId
         return try await Self.summary(eventId: eventId, viewerId: viewerId, on: req.db)
     }
@@ -104,7 +106,7 @@ struct SocialController: RouteCollection {
         let token = try req.auth.require(UserToken.self)
         let userId = try token.requireUserID()
         let eventId = try id(req)
-        guard let event = try await EventModel.find(eventId, on: req.db) else { throw Abort(.notFound) }
+        let event = try await requireViewableEvent(eventId, req)
 
         let existing = try await EventLikeModel.query(on: req.db)
             .filter(\.$eventId == eventId)
@@ -113,11 +115,12 @@ struct SocialController: RouteCollection {
         if existing == nil {
             try await EventLikeModel(eventId: eventId, userId: userId).create(on: req.db)
             if token.creatorId != event.creatorId {
+                let name = try await NotificationCenter.actorName(for: userId, on: req.db)
                 try await NotificationCenter.notifyCreator(
                     creatorId: event.creatorId,
                     kind: .like,
                     title: "New like",
-                    body: "Someone liked \(event.title).",
+                    body: "\(name) liked \(event.title).",
                     eventId: eventId,
                     on: req.db
                 )
@@ -130,6 +133,7 @@ struct SocialController: RouteCollection {
         let token = try req.auth.require(UserToken.self)
         let userId = try token.requireUserID()
         let eventId = try id(req)
+        _ = try await requireViewableEvent(eventId, req)
         try await EventLikeModel.query(on: req.db)
             .filter(\.$eventId == eventId)
             .filter(\.$userId == userId)
@@ -139,6 +143,7 @@ struct SocialController: RouteCollection {
 
     func commentLikeSummary(req: Request) async throws -> LikeSummary {
         let commentId = try commentId(req)
+        _ = try await requireViewableEvent(id(req), req)
         _ = try await requireComment(commentId, eventId: id(req), on: req.db)
         return try await Self.commentSummary(commentId: commentId, viewerId: req.auth.get(UserToken.self)?.userId, on: req.db)
     }
@@ -146,6 +151,7 @@ struct SocialController: RouteCollection {
     func likeComment(req: Request) async throws -> LikeSummary {
         let userId = try req.auth.require(UserToken.self).requireUserID()
         let commentId = try commentId(req)
+        _ = try await requireViewableEvent(id(req), req)
         _ = try await requireComment(commentId, eventId: id(req), on: req.db)
         let existing = try await CommentLikeModel.query(on: req.db)
             .filter(\.$commentId == commentId)
@@ -160,6 +166,7 @@ struct SocialController: RouteCollection {
     func unlikeComment(req: Request) async throws -> LikeSummary {
         let userId = try req.auth.require(UserToken.self).requireUserID()
         let commentId = try commentId(req)
+        _ = try await requireViewableEvent(id(req), req)
         try await CommentLikeModel.query(on: req.db)
             .filter(\.$commentId == commentId)
             .filter(\.$userId == userId)
@@ -169,6 +176,7 @@ struct SocialController: RouteCollection {
 
     func mediaLikeSummary(req: Request) async throws -> LikeSummary {
         let mediaId = try mediaId(req)
+        _ = try await requireViewableEvent(id(req), req)
         _ = try await requireMedia(mediaId, eventId: id(req), on: req.db)
         return try await Self.mediaSummary(mediaId: mediaId, viewerId: req.auth.get(UserToken.self)?.userId, on: req.db)
     }
@@ -176,6 +184,7 @@ struct SocialController: RouteCollection {
     func likeMedia(req: Request) async throws -> LikeSummary {
         let userId = try req.auth.require(UserToken.self).requireUserID()
         let mediaId = try mediaId(req)
+        _ = try await requireViewableEvent(id(req), req)
         _ = try await requireMedia(mediaId, eventId: id(req), on: req.db)
         let existing = try await MediaLikeModel.query(on: req.db)
             .filter(\.$mediaId == mediaId)
@@ -190,6 +199,7 @@ struct SocialController: RouteCollection {
     func unlikeMedia(req: Request) async throws -> LikeSummary {
         let userId = try req.auth.require(UserToken.self).requireUserID()
         let mediaId = try mediaId(req)
+        _ = try await requireViewableEvent(id(req), req)
         try await MediaLikeModel.query(on: req.db)
             .filter(\.$mediaId == mediaId)
             .filter(\.$userId == userId)
@@ -202,6 +212,16 @@ struct SocialController: RouteCollection {
     private func id(_ req: Request) throws -> UUID {
         guard let id = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
         return id
+    }
+
+    /// Loads the event and asserts the caller may view it (invite-only events
+    /// are limited to the owner and invited members).
+    private func requireViewableEvent(_ eventId: UUID, _ req: Request) async throws -> EventModel {
+        guard let event = try await EventModel.find(eventId, on: req.db) else { throw Abort(.notFound) }
+        guard try await EventAccess.canView(event, on: req) else {
+            throw Abort(.forbidden, reason: "This event is invite-only.")
+        }
+        return event
     }
 
     private func commentId(_ req: Request) throws -> UUID {

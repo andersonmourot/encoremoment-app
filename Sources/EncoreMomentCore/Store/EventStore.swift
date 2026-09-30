@@ -33,4 +33,16 @@ public protocol EventStore: Sendable {
     // Media
     func addMedia(_ item: MediaItem, toEvent eventId: UUID) async throws
     func removeMedia(id: UUID, fromEvent eventId: UUID) async throws
+
+    // Members (invited viewers & collaborators)
+    /// Everyone invited to the event (owner-only on the server).
+    func members(of eventID: UUID) async throws -> [EventMember]
+    /// The signed-in viewer's own membership, or `nil` when not a member.
+    func myMembership(in eventID: UUID) async throws -> EventMemberRole?
+    /// Invites a creator by handle; returns the updated member list.
+    @discardableResult
+    func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) async throws -> [EventMember]
+    /// Removes an invited member; returns the updated member list.
+    @discardableResult
+    func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember]
 }

@@ -66,11 +66,12 @@ struct FanController: RouteCollection {
             try await FollowModel(userId: uid, creatorId: creatorId).create(on: req.db)
             if let followedUser = try await UserModel.query(on: req.db).filter(\.$creatorId == creatorId).first(),
                followedUser.id != uid {
+                let name = try await NotificationCenter.actorName(for: uid, on: req.db)
                 try await NotificationCenter.notifyCreator(
                     creatorId: creatorId,
                     kind: .follow,
                     title: "New follower",
-                    body: "Someone followed your creator profile.",
+                    body: "\(name) followed your creator profile.",
                     on: req.db
                 )
             }

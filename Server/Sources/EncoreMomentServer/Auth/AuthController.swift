@@ -198,6 +198,10 @@ struct AuthController: RouteCollection {
             try await ReportModel.query(on: db).filter(\.$userId == userId).delete()
             try await NotificationModel.query(on: db).filter(\.$userId == userId).delete()
             try await MediaModel.query(on: db).filter(\.$uploaderId == userId).delete()
+            if let creatorId {
+                // Their memberships on other people's events.
+                try await EventMemberModel.query(on: db).filter(\.$creatorId == creatorId).delete()
+            }
 
             if !eventIds.isEmpty {
                 try await CommentModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
@@ -205,6 +209,7 @@ struct AuthController: RouteCollection {
                 try await FavoriteModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
                 try await EventStatsModel.query(on: db).filter(\.$id ~~ eventIds).delete()
                 try await MediaModel.query(on: db).filter(\.$event.$id ~~ eventIds).delete()
+                try await EventMemberModel.query(on: db).filter(\.$eventId ~~ eventIds).delete()
             }
             if !allMediaIds.isEmpty {
                 try await MediaLikeModel.query(on: db).filter(\.$mediaId ~~ Array(allMediaIds)).delete()

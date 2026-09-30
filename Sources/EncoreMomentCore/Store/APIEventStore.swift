@@ -21,6 +21,10 @@ import FoundationNetworking
 /// DELETE /events/{id}
 /// POST   /events/{id}/media        body: MediaItem
 /// DELETE /events/{id}/media/{mediaId}
+/// GET    /events/{id}/members      (owner) -> [EventMember]
+/// GET    /events/{id}/membership   -> { member: EventMember? }
+/// POST   /events/{id}/members      body: { handle, role } (owner)
+/// DELETE /events/{id}/members/{creatorId}  (owner or self)
 /// ```
 public actor APIEventStore: EventStore {
     private let baseURL: URL
@@ -89,6 +93,37 @@ public actor APIEventStore: EventStore {
 
     public func removeMedia(id: UUID, fromEvent eventId: UUID) async throws {
         try await send("DELETE", "events/\(eventId.uuidString)/media/\(id.uuidString)")
+    }
+
+    // MARK: Members
+
+    public func members(of eventID: UUID) async throws -> [EventMember] {
+        try await get("events/\(eventID.uuidString)/members")
+    }
+
+    public func myMembership(in eventID: UUID) async throws -> EventMemberRole? {
+        let response: EventMembershipResponse = try await get("events/\(eventID.uuidString)/membership")
+        return response.member?.role
+    }
+
+    @discardableResult
+    public func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) async throws -> [EventMember] {
+        var request = URLRequest(url: url("events/\(eventID.uuidString)/members", query: []))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(EventInviteRequest(handle: handle, role: role))
+        let (data, http) = try await transport.send(request)
+        try Self.validate(http)
+        return try decode(data)
+    }
+
+    @discardableResult
+    public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
+        var request = URLRequest(url: url("events/\(eventID.uuidString)/members/\(creatorID.uuidString)", query: []))
+        request.httpMethod = "DELETE"
+        let (data, http) = try await transport.send(request)
+        try Self.validate(http)
+        return try decode(data)
     }
 
     // MARK: Request helpers

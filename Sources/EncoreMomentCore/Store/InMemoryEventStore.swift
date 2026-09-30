@@ -6,13 +6,18 @@ import Foundation
 /// Seed it with ``SampleData`` for a populated experience, or start empty.
 public actor InMemoryEventStore: EventStore {
     private var state: StoreState
+    /// The creator profile acting as the local viewer — used to answer
+    /// `myMembership` in tests and previews (the real answer lives server-side).
+    public var viewerCreatorID: UUID?
 
-    public init(creators: [Creator] = [], events: [Event] = []) {
-        self.state = StoreState(creators: creators, events: events)
+    public init(creators: [Creator] = [], events: [Event] = [], members: [EventMember] = [], viewerCreatorID: UUID? = nil) {
+        self.state = StoreState(creators: creators, events: events, members: members)
+        self.viewerCreatorID = viewerCreatorID
     }
 
-    public init(state: StoreState) {
+    public init(state: StoreState, viewerCreatorID: UUID? = nil) {
         self.state = state
+        self.viewerCreatorID = viewerCreatorID
     }
 
     // MARK: Creators
@@ -37,5 +42,24 @@ public actor InMemoryEventStore: EventStore {
     }
     public func removeMedia(id: UUID, fromEvent eventId: UUID) async throws {
         try state.removeMedia(id: id, fromEvent: eventId)
+    }
+
+    // MARK: Members
+
+    public func members(of eventID: UUID) async throws -> [EventMember] { state.members(of: eventID) }
+
+    public func myMembership(in eventID: UUID) async throws -> EventMemberRole? {
+        guard let viewerCreatorID else { return nil }
+        return state.memberRole(creatorID: viewerCreatorID, in: eventID)
+    }
+
+    @discardableResult
+    public func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) async throws -> [EventMember] {
+        try state.inviteMember(handle: handle, role: role, to: eventID)
+    }
+
+    @discardableResult
+    public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
+        try state.removeMember(creatorID: creatorID, from: eventID)
     }
 }

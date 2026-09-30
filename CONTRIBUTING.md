@@ -103,13 +103,30 @@ modify events owned by your creator.
 | `POST` | `/events` | required | attributed to your creator |
 | `PUT` | `/events/{id}` | required (owner) | replaces media set |
 | `DELETE` | `/events/{id}` | required (owner) | |
-| `POST` | `/events/{id}/uploads` | required (owner or allowed contributor) | multipart `{ kind, file, thumbnail? }` upload; creates a `MediaItem` |
-| `POST` | `/events/{id}/media` | required (owner or allowed contributor) | add one `MediaItem` |
-| `DELETE` | `/events/{id}/media/{mediaId}` | required (owner) | |
+| `POST` | `/events/{id}/uploads` | required (owner, collaborator, or community if enabled) | multipart `{ kind, file, thumbnail? }` upload; creates a `MediaItem` |
+| `POST` | `/events/{id}/media` | required (owner, collaborator, or community if enabled) | add one `MediaItem` |
+| `DELETE` | `/events/{id}/media/{mediaId}` | required (owner or uploader) | |
 | `GET` | `/uploads/{filename}` | public | uploaded media bytes |
 | `GET` | `/creators` · `/creators/{id}` | public | |
 | `PUT` | `/creators/{id}` | required (self) | |
 | `GET` | `/health` | public | `{ "status": "ok" }` |
+
+**Invite-only events & members.** An `Event` with `inviteOnly: true` is visible
+only to its owner and invited members — `/events` omits it for everyone else and
+`/events/{id}` (plus comments/likes under it) returns `403`. Upload permission:
+owner, invited `collaborator`, or anyone signed in when
+`allowsCommunityUploads` is on. `viewer`s cannot upload. Media uploaded by the
+owner or a collaborator is marked `isOfficial: true` server-side; everything
+else is community content.
+
+| Method | Path | Auth | Returns / notes |
+| --- | --- | --- | --- |
+| `GET` | `/events/{id}/members` | required (owner) | `[EventMember]` |
+| `GET` | `/events/{id}/membership` | required | `{ member: EventMember? }` — the caller's own role |
+| `POST` | `/events/{id}/members` | required (owner) | `{ handle, role }` → updated `[EventMember]`; also notifies the invitee |
+| `DELETE` | `/events/{id}/members/{creatorId}` | required (owner or self) | updated `[EventMember]` |
+
+`EventMember` = `{ id, eventID, creatorID, role: "viewer"|"collaborator", displayName, handle }`.
 
 ### Comments & likes
 

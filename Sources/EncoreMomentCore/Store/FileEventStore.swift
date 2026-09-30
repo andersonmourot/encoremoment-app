@@ -48,6 +48,25 @@ public actor FileEventStore: EventStore {
         try mutate { try $0.removeMedia(id: id, fromEvent: eventId) }
     }
 
+    // MARK: Members
+
+    public func members(of eventID: UUID) async throws -> [EventMember] { state.members(of: eventID) }
+
+    /// The file store is anonymous — there is no signed-in viewer to look up.
+    public func myMembership(in eventID: UUID) async throws -> EventMemberRole? { nil }
+
+    @discardableResult
+    public func inviteMember(handle: String, role: EventMemberRole, to eventID: UUID) async throws -> [EventMember] {
+        try mutate { try $0.inviteMember(handle: handle, role: role, to: eventID) }
+        return state.members(of: eventID)
+    }
+
+    @discardableResult
+    public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
+        try mutate { try $0.removeMember(creatorID: creatorID, from: eventID) }
+        return state.members(of: eventID)
+    }
+
     // MARK: Persistence
 
     /// Applies `change` to a copy of the state and only commits + persists if it succeeds,
