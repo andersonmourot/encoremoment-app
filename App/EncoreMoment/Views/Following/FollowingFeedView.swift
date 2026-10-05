@@ -5,7 +5,6 @@ import EncoreMomentCore
 /// (media grid) and "Events" (event rail), both ranked by popularity.
 struct FollowingFeedView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var query = ""
     @State private var path: [UUID] = []
     @State private var rail: Rail = .moments
 
@@ -14,7 +13,7 @@ struct FollowingFeedView: View {
     }
 
     private var results: [Event] {
-        EventFeed.search(followedByPopularity, query: query)
+        followedByPopularity
     }
 
     /// Followed events, most-liked first (falls back to date order).
@@ -28,13 +27,7 @@ struct FollowingFeedView: View {
     }
 
     private var momentResults: [MediaFeedItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return model.followedMoments }
-        return model.followedMoments.filter {
-            [$0.eventTitle, $0.creatorName]
-                .joined(separator: " ")
-                .range(of: trimmed, options: .caseInsensitive) != nil
-        }
+        model.followedMoments
     }
 
     var body: some View {
@@ -60,10 +53,6 @@ struct FollowingFeedView: View {
                     EventDetailView(event: event)
                 }
             }
-            .searchable(
-                text: $query,
-                prompt: rail == .moments ? "Search moments" : "Search followed events"
-            )
             .refreshable { await model.refresh() }
         }
     }
@@ -83,7 +72,7 @@ struct FollowingFeedView: View {
         } else {
             MomentsGridView(
                 items: momentResults,
-                hasMore: model.hasMoreFollowedMoments && query.isEmpty,
+                hasMore: model.hasMoreFollowedMoments,
                 loadMore: { await model.loadMoreFollowedMoments() }
             )
         }
