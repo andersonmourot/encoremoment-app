@@ -75,6 +75,10 @@ public func configure(_ app: Application) async throws {
     }
     try await app.autoMigrate()
 
+    // Re-home any media that landed on the local uploads volume while R2 was
+    // misconfigured. No-ops when R2 isn't configured or nothing is local.
+    await UploadStorage.migrateLocalUploadsToR2(app: app)
+
     try await seedIfEmpty(app)
 
     try routes(app)

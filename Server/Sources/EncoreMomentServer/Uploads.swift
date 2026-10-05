@@ -59,7 +59,7 @@ enum UploadStorage {
                     key: filename,
                     contentType: file.contentType?.description ?? "application/octet-stream",
                     config: r2,
-                    req: req
+                    client: req.client
                 )
             } catch {
                 // Broken R2 credentials/config shouldn't hard-fail uploads —
@@ -80,7 +80,7 @@ enum UploadStorage {
         guard let config = req.application.storage[UploadsConfigurationKey.self] else { return }
         if let r2 = config.r2,
            url.absoluteString.hasPrefix(r2.publicBaseURL.absoluteString) {
-            try? await deleteFromR2(key: url.lastPathComponent, config: r2, req: req)
+            try? await deleteFromR2(key: url.lastPathComponent, config: r2, client: req.client)
             return
         }
         // Local mode serves files at /uploads/<filename> — only delete those.
@@ -90,11 +90,95 @@ enum UploadStorage {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
-    private static func uploadToR2(data: Data, key: String, contentType: String, config: R2Configuration, req: Request) async throws -> URL {
+    /// Moves any uploads-directory files referenced by the database into R2 and
+    /// rewrites the stored URLs. Idempotent: rows already pointing at R2 (or
+    /// anywhere else) are skipped. Runs at boot; never throws so a broken R2
+    /// can't take down the app.
+    static func migrateLocalUploadsToR2(app: Application) async {
+        guard let config = app.storage[UploadsConfigurationKey.self],
+              let r2 = config.r2 else { return }
+        let logger = app.logger
+        let uploadsDir = URL(fileURLWithPath: config.directory, isDirectory: true)
+        var cache: [String: URL] = [:]   // filename -> new R2 URL
+
+        func migrateURL(_ raw: String?) async -> String? {
+            guard let raw, let url = URL(string: raw),
+                  url.path.hasPrefix("/uploads/") else { return nil }
+            let filename = url.lastPathComponent
+            guard !filename.isEmpty,
+                  filename == URL(fileURLWithPath: filename).lastPathComponent else { return nil }
+            if let migrated = cache[filename] { return migrated.absoluteString }
+            let localFile = uploadsDir.appendingPathComponent(filename)
+            guard let data = try? Data(contentsOf: localFile) else {
+                logger.warning("R2 migration: local file missing for \(raw)")
+                return nil
+            }
+            do {
+                let newURL = try await uploadToR2(
+                    data: data,
+                    key: filename,
+                    contentType: contentType(for: filename),
+                    config: r2,
+                    client: app.client
+                )
+                cache[filename] = newURL
+                try? FileManager.default.removeItem(at: localFile)
+                return newURL.absoluteString
+            } catch {
+                logger.warning("R2 migration: upload failed for \(filename): \(error.localizedDescription)")
+                return nil
+            }
+        }
+
+        var migrated = 0
+        do {
+            for media in try await MediaModel.query(on: app.db).all() {
+                var changed = false
+                if let new = await migrateURL(media.url) { media.url = new; changed = true }
+                if let new = await migrateURL(media.thumbnailURL) { media.thumbnailURL = new; changed = true }
+                if changed { try await media.update(on: app.db); migrated += 1 }
+            }
+            for creator in try await CreatorModel.query(on: app.db).all() {
+                if let new = await migrateURL(creator.avatarURL) {
+                    creator.avatarURL = new
+                    try await creator.update(on: app.db)
+                    migrated += 1
+                }
+            }
+            for event in try await EventModel.query(on: app.db).all() {
+                if let new = await migrateURL(event.coverImageURL) {
+                    event.coverImageURL = new
+                    try await event.update(on: app.db)
+                    migrated += 1
+                }
+            }
+        } catch {
+            logger.error("R2 migration failed partway: \(error.localizedDescription)")
+        }
+        if migrated > 0 || !cache.isEmpty {
+            logger.info("R2 migration: moved \(cache.count) file(s), updated \(migrated) row(s).")
+        }
+    }
+
+    private static func contentType(for filename: String) -> String {
+        switch URL(fileURLWithPath: filename).pathExtension.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png": return "image/png"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "heic": return "image/heic"
+        case "mov": return "video/quicktime"
+        case "mp4": return "video/mp4"
+        case "m4v": return "video/x-m4v"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private static func uploadToR2(data: Data, key: String, contentType: String, config: R2Configuration, client: Client) async throws -> URL {
         var body = ByteBufferAllocator().buffer(capacity: data.count)
         body.writeBytes(data)
         let clientRequest = try r2Request(method: .PUT, key: key, body: body, contentType: contentType, config: config)
-        let response = try await req.client.send(clientRequest)
+        let response = try await client.send(clientRequest)
         guard (200..<300).contains(response.status.code) else {
             let responseBody = response.body.flatMap { buffer in
                 var copy = buffer
@@ -105,9 +189,9 @@ enum UploadStorage {
         return config.publicBaseURL.appendingPathComponent(key)
     }
 
-    private static func deleteFromR2(key: String, config: R2Configuration, req: Request) async throws {
+    private static func deleteFromR2(key: String, config: R2Configuration, client: Client) async throws {
         let clientRequest = try r2Request(method: .DELETE, key: key, body: ByteBuffer(), contentType: nil, config: config)
-        let response = try await req.client.send(clientRequest)
+        let response = try await client.send(clientRequest)
         guard (200..<300).contains(response.status.code) else {
             throw Abort(.badGateway, reason: "R2 delete failed with status \(response.status.code).")
         }
