@@ -20,6 +20,37 @@ struct FanController: RouteCollection {
         me.get("blocks", use: listBlocks)
         me.put("device-token", use: registerDeviceToken)
         me.delete("device-token", ":token", use: removeDeviceToken)
+        me.get("liked-media", use: likedMedia)
+    }
+
+    /// Every media item the caller has liked, on events they can still see.
+    func likedMedia(req: Request) async throws -> [MediaItem] {
+        let uid = try userId(req)
+        let mediaIds = try await MediaLikeModel.query(on: req.db)
+            .filter(\.$userId == uid).all().map(\.mediaId)
+        guard !mediaIds.isEmpty else { return [] }
+        let media = try await MediaModel.query(on: req.db)
+            .filter(\.$id ~~ mediaIds).all()
+        let eventIds = Set(media.map(\.$event.id))
+        let events = try await EventModel.query(on: req.db)
+            .filter(\.$id ~~ Array(eventIds)).all()
+        // Keep only media on published events the user can still view.
+        let viewerCreatorId = req.auth.get(UserToken.self)?.creatorId
+        var memberEventIds = Set<UUID>()
+        if let viewerCreatorId {
+            memberEventIds = (try? await EventAccess.memberEventIDs(for: viewerCreatorId, on: req.db)) ?? []
+        }
+        let visibleEventIds = Set(events.compactMap { event -> UUID? in
+            guard let id = event.id, event.isPublished else { return nil }
+            if event.inviteOnly, event.creatorId != viewerCreatorId, !memberEventIds.contains(id) {
+                return nil
+            }
+            return id
+        })
+        return media
+            .filter { visibleEventIds.contains($0.$event.id) }
+            .sorted { $0.createdAt > $1.createdAt }
+            .map { $0.toDTO() }
     }
 
     func preferences(req: Request) async throws -> FanPreferences {

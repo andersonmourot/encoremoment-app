@@ -59,6 +59,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateEventMember())
     app.migrations.add(CreateEventInviteLink())
     app.migrations.add(CreateDeviceToken())
+    app.migrations.add(AddCommentMediaId())
 
     // The InTheMomentServer -> EncoreMomentServer module rename changed the
     // qualified names Fluent recorded in _fluent_migrations, so an existing
@@ -83,9 +84,39 @@ public func configure(_ app: Application) async throws {
     // misconfigured. No-ops when R2 isn't configured or nothing is local.
     await UploadStorage.migrateLocalUploadsToR2(app: app)
 
+    // Drop creator profiles whose owning account no longer exists — keeps
+    // them out of Search suggestions after partial deletes.
+    await purgeOrphanCreators(app: app)
+
     try await seedIfEmpty(app)
 
     try routes(app)
+}
+
+/// Deletes creator profiles that no user account references and that own no
+/// events — leftovers from partial deletes. Seed/demo creators own events, so
+/// they're never touched.
+private func purgeOrphanCreators(app: Application) async {
+    do {
+        let linkedIDs = Set(try await UserModel.query(on: app.db).all().compactMap(\.creatorId))
+        let ownedEventCreators = Set(try await EventModel.query(on: app.db).all().map(\.creatorId))
+        let orphans = try await CreatorModel.query(on: app.db).all().filter { model in
+            guard let id = model.id else { return false }
+            return !linkedIDs.contains(id) && !ownedEventCreators.contains(id)
+        }
+        for orphan in orphans {
+            if let id = orphan.id {
+                try await FollowModel.query(on: app.db).filter(\.$creatorId == id).delete()
+                try await EventMemberModel.query(on: app.db).filter(\.$creatorId == id).delete()
+            }
+            try await orphan.delete(on: app.db)
+        }
+        if !orphans.isEmpty {
+            app.logger.info("Purged \(orphans.count) orphan creator profile(s).")
+        }
+    } catch {
+        app.logger.warning("Orphan-creator sweep failed: \(error)")
+    }
 }
 
 private func defaultUploadsPath(dbPath: String, workingDirectory: String) -> String {

@@ -1,21 +1,27 @@
 import SwiftUI
 import EncoreMomentCore
 
-/// Public feed of published events from every creator.
+/// Public feed split into two rails: "Moments" — a media-first grid ranked by
+/// likes — and "Events" — the classic event feed ranked by popularity.
 struct DiscoverView: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
     @State private var path: [UUID] = []
+    @State private var rail: Rail = .moments
+
+    private enum Rail {
+        case moments, events
+    }
 
     private var results: [Event] {
         EventFeed.search(model.events, query: query)
     }
 
-    private var creatorResults: [Creator] {
+    private var momentResults: [MediaFeedItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        return model.creators.filter { creator in
-            [creator.displayName, creator.handle, creator.bio ?? ""]
+        guard !trimmed.isEmpty else { return model.moments }
+        return model.moments.filter {
+            [$0.eventTitle, $0.creatorName]
                 .joined(separator: " ")
                 .range(of: trimmed, options: .caseInsensitive) != nil
         }
@@ -23,61 +29,20 @@ struct DiscoverView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            AsyncContentView(
-                isLoading: model.isLoading,
-                hasLoaded: model.hasLoaded,
-                isEmpty: model.events.isEmpty,
-                errorMessage: model.loadError,
-                retry: { await model.refresh() }
-            ) {
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            if !creatorResults.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Creators")
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    ForEach(creatorResults) { creator in
-                                        NavigationLink {
-                                            CreatorProfileView(creator: creator)
-                                        } label: {
-                                            DiscoverCreatorRow(creator: creator)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                            }
-
-                            if !creatorResults.isEmpty && !results.isEmpty {
-                                Divider()
-                            }
-
-                            ForEach(results) { event in
-                                EventRow(event: event, creator: model.creator(id: event.creatorId))
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { path.append(event.id) }
-                                    .task {
-                                        if event.id == results.last?.id {
-                                            await model.loadMoreEvents()
-                                        }
-                                    }
-                            }
-
-                            if model.hasMoreEvents {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
-                            }
-                        }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+            VStack(spacing: 0) {
+                Picker("Feed", selection: $rail) {
+                    Text("Moments").tag(Rail.moments)
+                    Text("Events").tag(Rail.events)
                 }
-            } empty: {
-                ContentUnavailableViewCompat(
-                    title: "No events yet",
-                    systemImage: "sparkles",
-                    message: "Published events from creators will show up here."
-                )
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+                if rail == .moments {
+                    momentsContent
+                } else {
+                    eventsContent
+                }
             }
             .navigationTitle("In The Moment")
             .navigationDestination(for: UUID.self) { id in
@@ -85,41 +50,71 @@ struct DiscoverView: View {
                     EventDetailView(event: event)
                 }
             }
-            .searchable(text: $query, prompt: "Search events")
+            .searchable(
+                text: $query,
+                prompt: rail == .moments ? "Search moments" : "Search events"
+            )
             .refreshable { await model.refresh() }
         }
     }
-}
 
-private struct DiscoverCreatorRow: View {
-    let creator: Creator
-    @EnvironmentObject private var model: AppModel
+    @ViewBuilder
+    private var momentsContent: some View {
+        if !model.hasLoaded && model.isLoading {
+            ProgressView().frame(maxHeight: .infinity)
+        } else if momentResults.isEmpty {
+            ContentUnavailableViewCompat(
+                title: "No moments yet",
+                systemImage: "camera.on.rectangle",
+                message: "Recently uploaded photos and videos will show up here."
+            )
+        } else {
+            MomentsGridView(
+                items: momentResults,
+                hasMore: model.hasMoreMoments && query.isEmpty,
+                loadMore: { await model.loadMoreMoments() }
+            )
+        }
+    }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            RemoteImage(url: creator.avatarURL)
-                .frame(width: 44, height: 44)
-                .clipShape(Circle())
+    @ViewBuilder
+    private var eventsContent: some View {
+        AsyncContentView(
+            isLoading: model.isLoading,
+            hasLoaded: model.hasLoaded,
+            isEmpty: model.events.isEmpty,
+            errorMessage: model.loadError,
+            retry: { await model.refresh() }
+        ) {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(results) { event in
+                        EventRow(event: event, creator: model.creator(id: event.creatorId))
+                            .contentShape(Rectangle())
+                            .onTapGesture { path.append(event.id) }
+                            .task {
+                                if event.id == results.last?.id {
+                                    await model.loadMoreEvents()
+                                }
+                            }
+                    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(creator.displayName).font(.subheadline.weight(.semibold))
-                    if creator.isVerified {
-                        Image(systemName: "checkmark.seal.fill")
-                            .foregroundStyle(model.accentColor)
+                    if model.hasMoreEvents {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
                     }
                 }
-                Text(creator.displayHandle)
-                    .font(.caption)
-                    .foregroundStyle(model.accentColor)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        } empty: {
+            ContentUnavailableViewCompat(
+                title: "No events yet",
+                systemImage: "sparkles",
+                message: "Published events from creators will show up here."
+            )
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 

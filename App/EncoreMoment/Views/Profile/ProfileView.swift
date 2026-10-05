@@ -16,6 +16,7 @@ struct ProfileView: View {
     @State private var avatarSelection: PhotosPickerItem?
     @State private var avatarEditorImage: AvatarEditorImage?
     @State private var isUpdatingAvatar = false
+    @State private var selectedLikedMedia: MediaItem?
 
     var body: some View {
         NavigationStack {
@@ -78,6 +79,10 @@ struct ProfileView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                }
+
+                if model.isAccountSignedIn {
+                    likedMediaSection
                 }
 
             }
@@ -190,6 +195,57 @@ struct ProfileView: View {
         } header: {
             Text("My Events")
         }
+    }
+
+    /// Photos & videos the user has liked, shown as a swipeable rail.
+    private var likedMediaSection: some View {
+        Section {
+            if model.likedMediaItems.isEmpty {
+                Text("Media you like will show up here.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.likedMediaItems) { item in
+                            Button {
+                                selectedLikedMedia = item
+                            } label: {
+                                RemoteImage(
+                                    url: MediaStorage.playableURL(for: item.thumbnailURL ?? item.url)
+                                )
+                                .frame(width: 88, height: 88)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(alignment: .topTrailing) {
+                                    if item.kind == .video {
+                                        Image(systemName: "play.fill")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.white)
+                                            .padding(5)
+                                            .background(.black.opacity(0.45), in: Circle())
+                                            .padding(4)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            }
+        } header: {
+            Text("Liked")
+        }
+        .fullScreenCover(item: $selectedLikedMedia) { item in
+            MediaPagerView(
+                items: model.likedMediaItems,
+                initialSelection: item.id,
+                onLikeChanged: { _ in
+                    Task { await model.loadLikedMedia() }
+                }
+            )
+        }
+        .task { await model.loadLikedMedia() }
     }
 }
 

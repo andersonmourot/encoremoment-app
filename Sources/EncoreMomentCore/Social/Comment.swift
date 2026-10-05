@@ -5,6 +5,9 @@ import Foundation
 public struct Comment: Identifiable, Codable, Sendable, Equatable {
     public let id: UUID
     public let eventID: UUID
+    /// When set, the comment is attached to that media item inside the event
+    /// rather than to the event itself.
+    public var mediaID: UUID?
     /// The account id of the comment's author.
     public let authorID: UUID
     public let authorName: String
@@ -14,6 +17,7 @@ public struct Comment: Identifiable, Codable, Sendable, Equatable {
     public init(
         id: UUID = UUID(),
         eventID: UUID,
+        mediaID: UUID? = nil,
         authorID: UUID,
         authorName: String,
         body: String,
@@ -21,6 +25,7 @@ public struct Comment: Identifiable, Codable, Sendable, Equatable {
     ) {
         self.id = id
         self.eventID = eventID
+        self.mediaID = mediaID
         self.authorID = authorID
         self.authorName = authorName
         self.body = body

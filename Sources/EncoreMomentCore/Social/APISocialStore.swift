@@ -45,6 +45,10 @@ public actor APISocialStore: SocialStore {
         try await request("events/\(eventID.uuidString)/comments", method: "GET")
     }
 
+    public func comments(forMedia mediaID: UUID, in eventID: UUID) async throws -> [Comment] {
+        try await request("events/\(eventID.uuidString)/media/\(mediaID.uuidString)/comments", method: "GET")
+    }
+
     @discardableResult
     public func addComment(eventID: UUID, body: String) async throws -> Comment {
         try await request(
@@ -52,6 +56,19 @@ public actor APISocialStore: SocialStore {
             method: "POST",
             body: CommentBody(body: body)
         )
+    }
+
+    @discardableResult
+    public func addComment(mediaID: UUID, eventID: UUID, body: String) async throws -> Comment {
+        try await request(
+            "events/\(eventID.uuidString)/media/\(mediaID.uuidString)/comments",
+            method: "POST",
+            body: CommentBody(body: body)
+        )
+    }
+
+    public func likedMedia() async throws -> [MediaItem] {
+        try await request("me/liked-media", method: "GET")
     }
 
     public func deleteComment(id: UUID, eventID: UUID) async throws {

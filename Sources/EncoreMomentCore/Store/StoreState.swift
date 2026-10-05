@@ -44,10 +44,40 @@ public struct StoreState: Codable, Sendable, Equatable {
         events.values.filter { $0.isPublished }.sorted { $0.date > $1.date }
     }
 
-    public func publishedEventsPage(limit: Int, offset: Int) -> [Event] {
-        let all = publishedEvents()
+    public func topCreators(limit: Int) -> [Creator] {
+        Array(
+            allCreators()
+                .sorted { ($0.followerCount ?? 0) > ($1.followerCount ?? 0) }
+                .prefix(limit)
+        )
+    }
+
+    /// Local stores have no follow graph, so `followingOnly` yields nothing.
+    public func publishedEventsPage(limit: Int, offset: Int, followingOnly: Bool, popular: Bool) -> [Event] {
+        var all = publishedEvents()
+        guard !followingOnly else { return [] }
+        if popular { all.sort { ($0.likeCount ?? 0) > ($1.likeCount ?? 0) } }
         guard offset < all.count else { return [] }
         return Array(all.dropFirst(offset).prefix(limit))
+    }
+
+    /// Cross-event media feed for the Moments rail. Local stores have no like
+    /// data, so ordering is recency-only and counts are zero.
+    public func mediaFeed(followingOnly: Bool, limit: Int, offset: Int) -> [MediaFeedItem] {
+        guard !followingOnly else { return [] }
+        let items = publishedEvents().flatMap { event -> [MediaFeedItem] in
+            let creatorName = creators[event.creatorId]?.displayName ?? ""
+            return event.media.map {
+                MediaFeedItem(
+                    media: $0, eventID: event.id, eventTitle: event.title,
+                    creatorID: event.creatorId, creatorName: creatorName,
+                    likeCount: 0, likedByViewer: false
+                )
+            }
+        }
+        .sorted { $0.media.createdAt > $1.media.createdAt }
+        guard offset < items.count else { return [] }
+        return Array(items.dropFirst(offset).prefix(limit))
     }
 
     public func events(forCreator creatorId: UUID) -> [Event] {

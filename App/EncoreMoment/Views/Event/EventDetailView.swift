@@ -174,13 +174,15 @@ struct EventDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedMedia) { item in
-            MediaDetailView(
-                item: item,
-                initialLikeSummary: mediaLikes[item.id] ?? LikeSummary(eventID: item.id),
-                onLikeChanged: { mediaLikes[item.id] = $0 }
-            ) {
-                Task { await model.recordDownloads(eventID: liveEvent.id, count: 1) }
-            }
+            MediaPagerView(
+                items: rankedMedia,
+                initialSelection: item.id,
+                likeSummaries: mediaLikes,
+                onLikeChanged: { mediaLikes[$0.eventID] = $0 },
+                onDownloaded: {
+                    Task { await model.recordDownloads(eventID: liveEvent.id, count: 1) }
+                }
+            )
         }
         .sheet(isPresented: $showingAuth) {
             AuthView()

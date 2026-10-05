@@ -13,6 +13,9 @@ struct SocialController: RouteCollection {
         events.grouped(UserToken.authenticator()).get(":id", "comments", use: listComments)
         events.grouped(UserToken.authenticator()).get(":id", "comments", ":commentId", "likes", use: commentLikeSummary)
         events.grouped(UserToken.authenticator()).get(":id", "media", ":mediaId", "likes", use: mediaLikeSummary)
+        events.grouped(UserToken.authenticator()).get(":id", "media", ":mediaId", "comments", use: listMediaComments)
+        // Cross-event media feed (the Moments rail).
+        routes.grouped(UserToken.authenticator()).grouped("media").get("feed", use: mediaFeed)
         // Optional auth: anonymous callers get likedByViewer == false.
         events.grouped(UserToken.authenticator()).get(":id", "likes", use: likeSummary)
         // Batch: every like summary on the event in one request.
@@ -24,6 +27,7 @@ struct SocialController: RouteCollection {
         protected.delete(":id", "comments", ":commentId", use: deleteComment)
         protected.post(":id", "comments", ":commentId", "like", use: likeComment)
         protected.delete(":id", "comments", ":commentId", "like", use: unlikeComment)
+        protected.post(":id", "media", ":mediaId", "comments", use: addMediaComment)
         protected.post(":id", "media", ":mediaId", "like", use: likeMedia)
         protected.delete(":id", "media", ":mediaId", "like", use: unlikeMedia)
         protected.post(":id", "like", use: like)
@@ -41,10 +45,57 @@ struct SocialController: RouteCollection {
         if !blockedUsers.isEmpty {
             query = query.filter(\.$userId !~ Array(blockedUsers))
         }
+        // Only event-level comments — media comments come from the
+        // per-media endpoint.
         return try await query
             .sort(\.$createdAt, .ascending)
             .all()
+            .filter { $0.mediaId == nil }
             .map { $0.toDTO() }
+    }
+
+    /// Comments on one media item, oldest first.
+    func listMediaComments(req: Request) async throws -> [Comment] {
+        let eventId = try id(req)
+        let mediaId = try mediaId(req)
+        _ = try await requireViewableEvent(eventId, req)
+        _ = try await requireMedia(mediaId, eventId: eventId, on: req.db)
+        let blockedUsers = try await Moderation.blockedUserIDs(for: req)
+        return try await CommentModel.query(on: req.db)
+            .filter(\.$eventId == eventId)
+            .sort(\.$createdAt, .ascending)
+            .all()
+            .filter { $0.mediaId == mediaId && !blockedUsers.contains($0.userId) }
+            .map { $0.toDTO() }
+    }
+
+    func addMediaComment(req: Request) async throws -> Comment {
+        let token = try req.auth.require(UserToken.self)
+        let userId = try token.requireUserID()
+        let eventId = try id(req)
+        let mediaId = try mediaId(req)
+        let event = try await requireViewableEvent(eventId, req)
+        _ = try await requireMedia(mediaId, eventId: eventId, on: req.db)
+
+        let text = try req.content.decode(CommentBody.self).body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Comment.isValidBody(text) else {
+            throw Abort(.unprocessableEntity, reason: "Comment must be 1–2000 characters.")
+        }
+
+        let name = try await Self.authorName(for: userId, on: req.db)
+        let model = CommentModel(eventId: eventId, mediaId: mediaId, userId: userId, authorName: name, body: text)
+        try await model.create(on: req.db)
+        if token.creatorId != event.creatorId {
+            try await NotificationCenter.notifyCreator(
+                creatorId: event.creatorId,
+                kind: .comment,
+                title: "New comment",
+                body: "\(name) commented on a photo in \(event.title).",
+                eventId: eventId,
+                on: req.db
+            )
+        }
+        return model.toDTO()
     }
 
     func addComment(req: Request) async throws -> Comment {
@@ -244,6 +295,87 @@ struct SocialController: RouteCollection {
             .filter(\.$userId == userId)
             .delete()
         return try await Self.mediaSummary(mediaId: mediaId, viewerId: userId, on: req.db)
+    }
+
+    /// `GET /media/feed?following=&limit=&offset=` — media across published,
+    /// viewable events ordered by likes then recency. `following=true`
+    /// restricts to creators the signed-in viewer follows.
+    func mediaFeed(req: Request) async throws -> [MediaFeedItem] {
+        let followingOnly = (try? req.query.get(Bool.self, at: "following")) ?? false
+        let limit = max(1, min((try? req.query.get(Int.self, at: "limit")) ?? 50, 100))
+        let offset = max(0, (try? req.query.get(Int.self, at: "offset")) ?? 0)
+
+        let blocked = try await Moderation.blockedCreatorIDs(for: req)
+        var allowedCreatorIds: Set<UUID>? = nil
+        if followingOnly {
+            guard let uid = req.auth.get(UserToken.self)?.userId else {
+                return []  // anonymous viewers follow nobody
+            }
+            allowedCreatorIds = Set(try await FollowModel.query(on: req.db)
+                .filter(\.$userId == uid).all().map(\.creatorId))
+        }
+
+        // Events the viewer may see: published, not invite-only (or a member/
+        // owner of it), not blocked, optionally limited to followed creators.
+        var eventRows = try await EventModel.query(on: req.db)
+            .filter(\.$isPublished == true)
+            .all()
+        let viewerCreatorId = req.auth.get(UserToken.self)?.creatorId
+        var memberEventIds = Set<UUID>()
+        if let viewerCreatorId {
+            memberEventIds = (try? await EventAccess.memberEventIDs(for: viewerCreatorId, on: req.db)) ?? []
+        }
+        eventRows = eventRows.filter { event in
+            guard let id = event.id else { return false }
+            if blocked.contains(event.creatorId) { return false }
+            if let allowed = allowedCreatorIds, !allowed.contains(event.creatorId) { return false }
+            if event.inviteOnly {
+                return event.creatorId == viewerCreatorId || memberEventIds.contains(id)
+            }
+            return true
+        }
+        let eventById = Dictionary(uniqueKeysWithValues: eventRows.compactMap { event in
+            event.id.map { ($0, event) }
+        })
+
+        var mediaRows = try await MediaModel.query(on: req.db)
+            .filter(\.$event.$id ~~ Array(eventById.keys))
+            .all()
+        // Like counts + the viewer's own like state for these items.
+        let mediaIds = mediaRows.compactMap(\.id)
+        let likes = mediaIds.isEmpty ? [] : try await MediaLikeModel.query(on: req.db)
+            .filter(\.$mediaId ~~ mediaIds).all()
+        let countByMedia = Dictionary(grouping: likes, by: \.mediaId).mapValues(\.count)
+        let viewerLiked: Set<UUID> = {
+            guard let uid = req.auth.get(UserToken.self)?.userId else { return [] }
+            return Set(likes.filter { $0.userId == uid }.map(\.mediaId))
+        }()
+
+        mediaRows.sort {
+            let lc = countByMedia[$0.id ?? UUID()] ?? 0
+            let rc = countByMedia[$1.id ?? UUID()] ?? 0
+            if lc != rc { return lc > rc }
+            return $0.createdAt > $1.createdAt
+        }
+        guard offset < mediaRows.count else { return [] }
+        let page = mediaRows.dropFirst(offset).prefix(limit)
+
+        let creatorNames = Dictionary(uniqueKeysWithValues: try await CreatorModel.query(on: req.db)
+            .filter(\.$id ~~ Array(Set(eventRows.map(\.creatorId))))
+            .all().compactMap { creator in creator.id.map { ($0, creator.displayName) } })
+
+        return page.compactMap { media in
+            guard let mid = media.id, let event = eventById[media.$event.id] else { return nil }
+            return MediaFeedItem(
+                media: media.toDTO(),
+                eventID: media.$event.id,
+                eventTitle: event.title,
+                creatorID: event.creatorId,
+                creatorName: creatorNames[event.creatorId] ?? "",
+                likeCount: countByMedia[mid] ?? 0,
+                likedByViewer: viewerLiked.contains(mid)
+            )
+        }
     }
 
     // MARK: Helpers

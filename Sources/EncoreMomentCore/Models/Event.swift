@@ -22,6 +22,9 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
     /// `allowsCommunityUploads`.
     public var inviteOnly: Bool
     public var media: [MediaItem]
+    /// Total event likes — populated by the API on feed reads so popular-first
+    /// ordering and badges can be rendered without extra calls.
+    public var likeCount: Int?
 
     public init(
         id: UUID = UUID(),
@@ -35,7 +38,8 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         isPublished: Bool = true,
         allowsCommunityUploads: Bool = false,
         inviteOnly: Bool = false,
-        media: [MediaItem] = []
+        media: [MediaItem] = [],
+        likeCount: Int? = nil
     ) {
         self.id = id
         self.creatorId = creatorId
@@ -49,11 +53,12 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         self.allowsCommunityUploads = allowsCommunityUploads
         self.inviteOnly = inviteOnly
         self.media = media
+        self.likeCount = likeCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, creatorId, title, details, coverImageURL, location, date, createdAt
-        case isPublished, allowsCommunityUploads, inviteOnly, media
+        case isPublished, allowsCommunityUploads, inviteOnly, media, likeCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -70,6 +75,7 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         allowsCommunityUploads = try container.decodeIfPresent(Bool.self, forKey: .allowsCommunityUploads) ?? false
         inviteOnly = try container.decodeIfPresent(Bool.self, forKey: .inviteOnly) ?? false
         media = try container.decodeIfPresent([MediaItem].self, forKey: .media) ?? []
+        likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -86,6 +92,7 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         try container.encode(allowsCommunityUploads, forKey: .allowsCommunityUploads)
         try container.encode(inviteOnly, forKey: .inviteOnly)
         try container.encode(media, forKey: .media)
+        try container.encodeIfPresent(likeCount, forKey: .likeCount)
     }
 
     public var photoCount: Int { media.lazy.filter { $0.kind == .photo }.count }

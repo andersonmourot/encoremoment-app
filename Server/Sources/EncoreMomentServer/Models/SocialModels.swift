@@ -9,6 +9,8 @@ final class CommentModel: Model, @unchecked Sendable {
 
     @ID(custom: "id", generatedBy: .user) var id: UUID?
     @Field(key: "event_id") var eventId: UUID
+    /// When set the comment belongs to that media item, not the event itself.
+    @OptionalField(key: "media_id") var mediaId: UUID?
     @Field(key: "user_id") var userId: UUID
     @Field(key: "author_name") var authorName: String
     @Field(key: "body") var body: String
@@ -16,9 +18,10 @@ final class CommentModel: Model, @unchecked Sendable {
 
     init() {}
 
-    init(id: UUID = UUID(), eventId: UUID, userId: UUID, authorName: String, body: String, createdAt: Date = Date()) {
+    init(id: UUID = UUID(), eventId: UUID, mediaId: UUID? = nil, userId: UUID, authorName: String, body: String, createdAt: Date = Date()) {
         self.id = id
         self.eventId = eventId
+        self.mediaId = mediaId
         self.userId = userId
         self.authorName = authorName
         self.body = body
@@ -26,7 +29,19 @@ final class CommentModel: Model, @unchecked Sendable {
     }
 
     func toDTO() -> Comment {
-        Comment(id: id ?? UUID(), eventID: eventId, authorID: userId, authorName: authorName, body: body, createdAt: createdAt)
+        Comment(id: id ?? UUID(), eventID: eventId, mediaID: mediaId, authorID: userId, authorName: authorName, body: body, createdAt: createdAt)
+    }
+}
+
+struct AddCommentMediaId: AsyncMigration {
+    var name: String { "AddCommentMediaId" }
+    func prepare(on database: Database) async throws {
+        try await database.schema(CommentModel.schema)
+            .field("media_id", .uuid, .references(MediaModel.schema, "id", onDelete: .cascade))
+            .update()
+    }
+    func revert(on database: Database) async throws {
+        try await database.schema(CommentModel.schema).deleteField("media_id").update()
     }
 }
 

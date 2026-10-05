@@ -27,7 +27,19 @@ final class AppModel: ObservableObject {
     /// Fraction (0–1) of the in-flight media upload, or `nil` when idle.
     @Published private(set) var uploadProgress: Double?
 
+    /// Cross-event media feed (Discover → Moments), most-liked first.
+    @Published private(set) var moments: [MediaFeedItem] = []
+    @Published private(set) var hasMoreMoments = false
+    /// Moments restricted to followed creators (Following → Moments).
+    @Published private(set) var followedMoments: [MediaFeedItem] = []
+    @Published private(set) var hasMoreFollowedMoments = false
+    /// Media the signed-in user has liked (Profile → Liked).
+    @Published private(set) var likedMediaItems: [MediaItem] = []
+    /// Most-followed creators — the Search tab's default suggestions.
+    @Published private(set) var topCreators: [Creator] = []
+
     static let feedPageSize = 25
+    static let momentsPageSize = 30
 
     /// The profile currently acting in "creator mode" (the signed-in account),
     /// or `nil` when browsing as an anonymous viewer or a legacy account.
@@ -151,8 +163,15 @@ final class AppModel: ObservableObject {
         loadError = nil
         defer { isLoading = false; hasLoaded = true }
         do {
-            async let published = store.publishedEventsPage(limit: Self.feedPageSize, offset: 0)
+            async let published = store.publishedEventsPage(
+                limit: Self.feedPageSize, offset: 0, followingOnly: false, popular: true
+            )
             async let people = store.allCreators()
+            async let feed = store.mediaFeed(followingOnly: false, limit: Self.momentsPageSize, offset: 0)
+            async let followedFeed = store.mediaFeed(
+                followingOnly: true, limit: Self.momentsPageSize, offset: 0
+            )
+            async let top = store.topCreators(limit: 20)
             let firstPage = try await published
             let allCreators = try await people
             // Blocked creators are hidden from every feed; the server also
@@ -161,6 +180,16 @@ final class AppModel: ObservableObject {
             self.events = firstPage.filter { !fanPrefs.isBlocked($0.creatorId) }
             self.hasMoreEvents = firstPage.count == Self.feedPageSize
             self.creators = allCreators.filter { !fanPrefs.isBlocked($0.id) }
+            let feedPage = (try? await feed) ?? []
+            self.moments = feedPage.filter { !fanPrefs.isBlocked($0.creatorID) }
+            self.hasMoreMoments = feedPage.count == Self.momentsPageSize
+            let followedPage = (try? await followedFeed) ?? []
+            self.followedMoments = followedPage.filter { !fanPrefs.isBlocked($0.creatorID) }
+            self.hasMoreFollowedMoments = followedPage.count == Self.momentsPageSize
+            self.topCreators = ((try? await top) ?? []).filter { !fanPrefs.isBlocked($0.id) }
+            self.likedMediaItems = isAccountSignedIn
+                ? ((try? await socialStore.likedMedia()) ?? [])
+                : []
             // Signed-in users get blocked profiles from /me/blocks (the server
             // filters them out of /creators); anonymous users derive them here.
             let derived = allCreators.filter { fanPrefs.isBlocked($0.id) }
@@ -183,12 +212,37 @@ final class AppModel: ObservableObject {
     func loadMoreEvents() async {
         guard hasMoreEvents, !isLoading else { return }
         guard let page = try? await store.publishedEventsPage(
-            limit: Self.feedPageSize, offset: events.count
+            limit: Self.feedPageSize, offset: events.count,
+            followingOnly: false, popular: true
         ) else { return }
         let fresh = page.filter { !fanPrefs.isBlocked($0.creatorId) }
             .filter { incoming in !events.contains { $0.id == incoming.id } }
         events.append(contentsOf: fresh)
         hasMoreEvents = page.count == Self.feedPageSize
+    }
+
+    /// Appends the next page of Moments media.
+    func loadMoreMoments() async {
+        guard hasMoreMoments else { return }
+        guard let page = try? await store.mediaFeed(
+            followingOnly: false, limit: Self.momentsPageSize, offset: moments.count
+        ) else { return }
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) }
+            .filter { incoming in !moments.contains { $0.id == incoming.id } }
+        moments.append(contentsOf: fresh)
+        hasMoreMoments = page.count == Self.momentsPageSize
+    }
+
+    /// Appends the next page of followed Moments media.
+    func loadMoreFollowedMoments() async {
+        guard hasMoreFollowedMoments else { return }
+        guard let page = try? await store.mediaFeed(
+            followingOnly: true, limit: Self.momentsPageSize, offset: followedMoments.count
+        ) else { return }
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) }
+            .filter { incoming in !followedMoments.contains { $0.id == incoming.id } }
+        followedMoments.append(contentsOf: fresh)
+        hasMoreFollowedMoments = page.count == Self.momentsPageSize
     }
 
     // MARK: Analytics
@@ -486,6 +540,16 @@ final class AppModel: ObservableObject {
         return (try? await store.event(id: id)) ?? nil
     }
 
+    /// Loads an event by id — the cached copy if present, otherwise a fetch.
+    /// Used by media deep-views (Moments feed, media comments) that can reach
+    /// events not in the current feed page.
+    func loadEvent(id: UUID) async -> Event? {
+        if let cached = event(id: id) ?? myEventsList.first(where: { $0.id == id }) {
+            return cached
+        }
+        return try? await store.event(id: id)
+    }
+
     func event(id: UUID) -> Event? {
         events.first { $0.id == id } ?? myEventsList.first { $0.id == id }
     }
@@ -597,6 +661,11 @@ final class AppModel: ObservableObject {
         (try? await socialStore.comments(forEvent: eventID)) ?? []
     }
 
+    /// Comments on one media item inside an event.
+    func comments(forMedia mediaID: UUID, in eventID: UUID) async -> [Comment] {
+        (try? await socialStore.comments(forMedia: mediaID, in: eventID)) ?? []
+    }
+
     /// Posts a comment; returns the created comment, or nil on failure.
     func addComment(eventID: UUID, body: String) async -> Comment? {
         do {
@@ -605,6 +674,22 @@ final class AppModel: ObservableObject {
             errorMessage = "Couldn't post your comment. Please try again."
             return nil
         }
+    }
+
+    /// Posts a comment on a specific media item; returns it, or nil on failure.
+    func addComment(mediaID: UUID, eventID: UUID, body: String) async -> Comment? {
+        do {
+            return try await socialStore.addComment(mediaID: mediaID, eventID: eventID, body: body)
+        } catch {
+            errorMessage = "Couldn't post your comment. Please try again."
+            return nil
+        }
+    }
+
+    /// Refreshes the signed-in user's liked-media list (Profile → Liked).
+    func loadLikedMedia() async {
+        guard isAccountSignedIn else { likedMediaItems = []; return }
+        likedMediaItems = (try? await socialStore.likedMedia()) ?? []
     }
 
     /// Deletes a comment. The server enforces author/owner authorization.

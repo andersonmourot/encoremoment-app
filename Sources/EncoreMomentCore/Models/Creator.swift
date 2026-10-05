@@ -13,6 +13,8 @@ public struct Creator: Identifiable, Codable, Hashable, Sendable {
     public var accentColorHex: String?
     public var isVerified: Bool
     public let joinedAt: Date
+    /// Follower count — populated by the API on creator listings.
+    public var followerCount: Int?
 
     public init(
         id: UUID = UUID(),
@@ -22,7 +24,8 @@ public struct Creator: Identifiable, Codable, Hashable, Sendable {
         avatarURL: URL? = nil,
         accentColorHex: String? = nil,
         isVerified: Bool = false,
-        joinedAt: Date = Date()
+        joinedAt: Date = Date(),
+        followerCount: Int? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -32,6 +35,7 @@ public struct Creator: Identifiable, Codable, Hashable, Sendable {
         self.accentColorHex = accentColorHex
         self.isVerified = isVerified
         self.joinedAt = joinedAt
+        self.followerCount = followerCount
     }
 
     /// The handle rendered with a leading `@` for display.

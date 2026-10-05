@@ -6,9 +6,16 @@ import Foundation
 public protocol SocialStore: Sendable {
     /// Comments for an event, oldest first.
     func comments(forEvent eventID: UUID) async throws -> [Comment]
+    /// Comments on one media item within an event, oldest first.
+    func comments(forMedia mediaID: UUID, in eventID: UUID) async throws -> [Comment]
     /// Posts a comment as the authenticated user; returns the created comment.
     @discardableResult
     func addComment(eventID: UUID, body: String) async throws -> Comment
+    /// Posts a comment on a specific media item inside an event.
+    @discardableResult
+    func addComment(mediaID: UUID, eventID: UUID, body: String) async throws -> Comment
+    /// Media the signed-in viewer has liked (the profile "Liked" section).
+    func likedMedia() async throws -> [MediaItem]
     /// Deletes a comment (author or the event's creator only).
     func deleteComment(id: UUID, eventID: UUID) async throws
     func commentLikeSummary(commentID: UUID, eventID: UUID) async throws -> LikeSummary
@@ -45,7 +52,15 @@ public actor InMemorySocialStore: SocialStore {
     }
 
     public func comments(forEvent eventID: UUID) async throws -> [Comment] {
-        (commentsByEvent[eventID] ?? []).sorted { $0.createdAt < $1.createdAt }
+        (commentsByEvent[eventID] ?? [])
+            .filter { $0.mediaID == nil }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    public func comments(forMedia mediaID: UUID, in eventID: UUID) async throws -> [Comment] {
+        (commentsByEvent[eventID] ?? [])
+            .filter { $0.mediaID == mediaID }
+            .sorted { $0.createdAt < $1.createdAt }
     }
 
     @discardableResult
@@ -61,6 +76,25 @@ public actor InMemorySocialStore: SocialStore {
         commentsByEvent[eventID, default: []].append(comment)
         return comment
     }
+
+    @discardableResult
+    public func addComment(mediaID: UUID, eventID: UUID, body: String) async throws -> Comment {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Comment.isValidBody(trimmed) else { throw SocialStoreError.invalidComment }
+        let comment = Comment(
+            eventID: eventID,
+            mediaID: mediaID,
+            authorID: viewerID,
+            authorName: viewerName,
+            body: trimmed
+        )
+        commentsByEvent[eventID, default: []].append(comment)
+        return comment
+    }
+
+    /// The in-memory store doesn't hold media items — the API store serves
+    /// this from `GET /me/liked-media`.
+    public func likedMedia() async throws -> [MediaItem] { [] }
 
     public func deleteComment(id: UUID, eventID: UUID) async throws {
         commentsByEvent[eventID]?.removeAll { $0.id == id }

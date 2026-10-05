@@ -16,6 +16,7 @@ struct MediaDetailView: View {
     @State private var reportTarget: ReportTarget?
     @State private var likeSummary: LikeSummary?
     @State private var isTogglingLike = false
+    @State private var showComments = false
 
     private enum DownloadState: Equatable {
         case idle, downloading, done, failed(String)
@@ -35,6 +36,14 @@ struct MediaDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) { likeButton }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showComments = true
+                    } label: {
+                        Image(systemName: "bubble.right")
+                    }
+                    .accessibilityLabel("Comments")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         reportTarget = ReportTarget(
                             targetType: .media,
                             targetID: item.id,
@@ -51,6 +60,9 @@ struct MediaDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $reportTarget) { target in
                 ReportSheet(target: target)
+            }
+            .sheet(isPresented: $showComments) {
+                MediaCommentsSheet(item: item)
             }
             .task(id: item.id) {
                 likeSummary = initialLikeSummary.eventID == item.id
@@ -128,5 +140,39 @@ struct MediaDetailView: View {
 
     private func resolvedURL(_ url: URL) -> URL {
         MediaStorage.playableURL(for: url)
+    }
+}
+
+/// Comments thread for one media item. Fetches the parent event on first open
+/// (needed for delete permissions), then renders the shared ``CommentsSection``.
+private struct MediaCommentsSheet: View {
+    let item: MediaItem
+    @EnvironmentObject private var model: AppModel
+    @State private var event: Event?
+    @State private var loadFailed = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let event {
+                    ScrollView {
+                        CommentsSection(event: event, media: item)
+                            .padding()
+                    }
+                } else if loadFailed {
+                    Text("Couldn't load comments. Please try again.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle("Comments")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .task {
+            event = await model.loadEvent(id: item.eventId)
+            loadFailed = event == nil
+        }
+        .presentationDetents([.medium, .large])
     }
 }

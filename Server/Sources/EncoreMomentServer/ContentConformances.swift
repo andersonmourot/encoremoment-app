@@ -21,3 +21,4 @@ extension EventLikeSummaries: Content {}
 extension EventInviteLink: Content {}
 extension InviteLinkCreateRequest: Content {}
 extension InviteLinkPreview: Content {}
+extension MediaFeedItem: Content {}

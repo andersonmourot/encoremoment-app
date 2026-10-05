@@ -1,10 +1,13 @@
 import SwiftUI
 import EncoreMomentCore
 
-/// The comments thread for an event: a list of comments plus a composer for
-/// signed-in users. Loads its own data through ``AppModel`` (views never network).
+/// The comments thread for an event — or, when `media` is set, for one media
+/// item inside it: a list of comments plus a composer for signed-in users.
+/// Loads its own data through ``AppModel`` (views never network).
 struct CommentsSection: View {
     let event: Event
+    /// When set, shows and posts comments scoped to this media item.
+    var media: MediaItem? = nil
     @EnvironmentObject private var model: AppModel
 
     @State private var comments: [Comment] = []
@@ -63,7 +66,7 @@ struct CommentsSection: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .task(id: event.id) { await load() }
+        .task(id: media?.id ?? event.id) { await load() }
         .sheet(item: $reportTarget) { target in
             ReportSheet(target: target)
         }
@@ -94,7 +97,11 @@ struct CommentsSection: View {
     }
 
     private func load() async {
-        comments = await model.comments(forEvent: event.id)
+        if let media {
+            comments = await model.comments(forMedia: media.id, in: event.id)
+        } else {
+            comments = await model.comments(forEvent: event.id)
+        }
         await loadLikes()
         hasLoaded = true
     }
@@ -111,7 +118,12 @@ struct CommentsSection: View {
         isPosting = true
         defer { isPosting = false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let created = await model.addComment(eventID: event.id, body: text) else { return }
+        let created = if let media {
+            await model.addComment(mediaID: media.id, eventID: event.id, body: text)
+        } else {
+            await model.addComment(eventID: event.id, body: text)
+        }
+        guard let created else { return }
         comments.append(created)
         likesByComment[created.id] = LikeSummary(eventID: created.id)
         draft = ""

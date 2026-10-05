@@ -17,6 +17,8 @@ public enum EventStoreError: Error, Equatable, Sendable {
 public protocol EventStore: Sendable {
     // Creators
     func allCreators() async throws -> [Creator]
+    /// Most-followed creators, used as the Search tab's default suggestions.
+    func topCreators(limit: Int) async throws -> [Creator]
     func creator(id: UUID) async throws -> Creator?
     func upsertCreator(_ creator: Creator) async throws
 
@@ -25,7 +27,16 @@ public protocol EventStore: Sendable {
     func publishedEvents() async throws -> [Event]
     /// A page of published events for the Discover feed. `offset` is the number
     /// of already-loaded events; fewer than `limit` results means no more pages.
-    func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event]
+    /// `followingOnly` restricts to creators the viewer follows; `popular`
+    /// orders by like count (most liked first) instead of date.
+    func publishedEventsPage(
+        limit: Int,
+        offset: Int,
+        followingOnly: Bool,
+        popular: Bool
+    ) async throws -> [Event]
+    /// Cross-event media feed (the "Moments" rail) — most-liked first.
+    func mediaFeed(followingOnly: Bool, limit: Int, offset: Int) async throws -> [MediaFeedItem]
     /// Every event owned by a creator, including unpublished drafts.
     func events(forCreator creatorId: UUID) async throws -> [Event]
     func event(id: UUID) async throws -> Event?

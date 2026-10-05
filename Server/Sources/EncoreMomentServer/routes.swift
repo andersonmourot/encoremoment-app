@@ -35,11 +35,27 @@ struct CreatorController: RouteCollection {
         if !blocked.isEmpty {
             query = query.filter(\.$id !~ Array(blocked))
         }
-        let creators = try await query
+        var creators = try await query
             .sort(\.$displayName)
             .all()
-            .map { $0.toDTO() }
-        return try ETagResponder.respond(creators, on: req)
+        // Attach follower counts (used for ordering + display).
+        let ids = creators.compactMap(\.id)
+        let follows = ids.isEmpty ? [] : try await FollowModel.query(on: req.db)
+            .filter(\.$creatorId ~~ ids).all()
+        let followerCounts = Dictionary(grouping: follows, by: \.creatorId).mapValues(\.count)
+        var dtos = creators.map { model -> Creator in
+            var dto = model.toDTO()
+            dto.followerCount = followerCounts[model.id ?? UUID()] ?? 0
+            return dto
+        }
+        // `?sort=followers&limit=N` — most-followed first (Search suggestions).
+        if (try? req.query.get(String.self, at: "sort")) == "followers" {
+            dtos.sort { ($0.followerCount ?? 0) > ($1.followerCount ?? 0) }
+            if let limit = try? req.query.get(Int.self, at: "limit") {
+                dtos = Array(dtos.prefix(max(1, min(limit, 100))))
+            }
+        }
+        return try ETagResponder.respond(dtos, on: req)
     }
 
     func show(req: Request) async throws -> Creator {
@@ -112,6 +128,17 @@ struct EventController: RouteCollection {
         if !blocked.isEmpty {
             query = query.filter(\.$creatorId !~ Array(blocked))
         }
+        // `?following=true` — only events from creators the viewer follows.
+        if (try? req.query.get(Bool.self, at: "following")) == true {
+            guard let uid = req.auth.get(UserToken.self)?.userId else {
+                return try ETagResponder.respond([Event](), on: req)
+            }
+            let followed = try await FollowModel.query(on: req.db)
+                .filter(\.$userId == uid).all().map(\.creatorId)
+            query = followed.isEmpty
+                ? query.filter(\.$creatorId ~~ [UUID()])  // nothing matches
+                : query.filter(\.$creatorId ~~ followed)
+        }
         // Invite-only events are visible to their owner and invited members.
         // Filtering in SQL keeps `offset`/`limit` pagination honest.
         let viewerCreatorId = req.auth.get(UserToken.self)?.creatorId
@@ -128,14 +155,30 @@ struct EventController: RouteCollection {
                 group.filter(\.$id ~~ Array(memberEventIds))
             }
         }
-        // Pagination: `?limit=N&offset=M` (offset = events already loaded).
-        if let limit = req.query[Int.self, at: "limit"] {
-            let clamped = max(1, min(limit, 100))
-            let offset = max(0, req.query[Int.self, at: "offset"] ?? 0)
-            query = query.range(offset..<(offset + clamped))
+        let popular = (try? req.query.get(String.self, at: "sort")) == "popular"
+        let limit = (try? req.query.get(Int.self, at: "limit")).map { max(1, min($0, 100)) }
+        let offset = max(0, (try? req.query.get(Int.self, at: "offset")) ?? 0)
+        // Popular sort ranks by like count, so the page must be sliced after
+        // sorting — defer the range when `sort=popular`.
+        if let limit, !popular {
+            query = query.range(offset..<(offset + limit))
         }
-        let events = try await query.sort(\.$date, .descending).all()
-        return try ETagResponder.respond(events.map { $0.toDTO() }, on: req)
+        var events = try await query.sort(\.$date, .descending).all()
+        // Attach like counts (used for popular ordering + badges).
+        let ids = events.compactMap(\.id)
+        let likes = ids.isEmpty ? [] : try await EventLikeModel.query(on: req.db)
+            .filter(\.$eventId ~~ ids).all()
+        let likeCounts = Dictionary(grouping: likes, by: \.eventId).mapValues(\.count)
+        var dtos = events.map { model -> Event in
+            var dto = model.toDTO()
+            dto.likeCount = likeCounts[model.id ?? UUID()] ?? 0
+            return dto
+        }
+        if popular { dtos.sort { ($0.likeCount ?? 0) > ($1.likeCount ?? 0) } }
+        if let limit, popular {
+            dtos = Array(dtos.dropFirst(offset).prefix(limit))
+        }
+        return try ETagResponder.respond(dtos, on: req)
     }
 
     /// Creates a shareable invite link for an owned event.

@@ -118,3 +118,35 @@ public struct MediaItem: Identifiable, Codable, Hashable, Sendable {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
+
+/// A media item with its event/creator context and like state — the row shape
+/// for cross-event feeds like Moments and the following feed.
+public struct MediaFeedItem: Identifiable, Codable, Sendable, Equatable {
+    public var media: MediaItem
+    public var eventID: UUID
+    public var eventTitle: String
+    public var creatorID: UUID
+    public var creatorName: String
+    public var likeCount: Int
+    public var likedByViewer: Bool
+
+    public var id: UUID { media.id }
+
+    public init(
+        media: MediaItem,
+        eventID: UUID,
+        eventTitle: String,
+        creatorID: UUID,
+        creatorName: String,
+        likeCount: Int,
+        likedByViewer: Bool
+    ) {
+        self.media = media
+        self.eventID = eventID
+        self.eventTitle = eventTitle
+        self.creatorID = creatorID
+        self.creatorName = creatorName
+        self.likeCount = likeCount
+        self.likedByViewer = likedByViewer
+    }
+}

@@ -1,37 +1,58 @@
 import SwiftUI
 import EncoreMomentCore
 
+/// Feed of content from creators the user follows, split into "Moments"
+/// (media grid) and "Events" (event rail), both ranked by popularity.
 struct FollowingFeedView: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
     @State private var path: [UUID] = []
+    @State private var rail: Rail = .moments
+
+    private enum Rail {
+        case moments, events
+    }
 
     private var results: [Event] {
-        EventFeed.search(model.followedEvents, query: query)
+        EventFeed.search(followedByPopularity, query: query)
+    }
+
+    /// Followed events, most-liked first (falls back to date order).
+    private var followedByPopularity: [Event] {
+        model.followedEvents.sorted {
+            let left = $0.likeCount ?? 0
+            let right = $1.likeCount ?? 0
+            if left == right { return $0.date > $1.date }
+            return left > right
+        }
+    }
+
+    private var momentResults: [MediaFeedItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return model.followedMoments }
+        return model.followedMoments.filter {
+            [$0.eventTitle, $0.creatorName]
+                .joined(separator: " ")
+                .range(of: trimmed, options: .caseInsensitive) != nil
+        }
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            AsyncContentView(
-                isLoading: model.isLoading,
-                hasLoaded: model.hasLoaded,
-                isEmpty: model.followedCreators.isEmpty || results.isEmpty,
-                errorMessage: model.loadError,
-                retry: { await model.refresh() }
-            ) {
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        ForEach(results) { event in
-                            FollowingEventRow(event: event, creator: model.creator(id: event.creatorId))
-                                .contentShape(Rectangle())
-                                .onTapGesture { path.append(event.id) }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+            VStack(spacing: 0) {
+                Picker("Feed", selection: $rail) {
+                    Text("Moments").tag(Rail.moments)
+                    Text("Events").tag(Rail.events)
                 }
-            } empty: {
-                emptyState
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+                if rail == .moments {
+                    momentsContent
+                } else {
+                    eventsContent
+                }
             }
             .navigationTitle("Following")
             .navigationDestination(for: UUID.self) { id in
@@ -39,19 +60,64 @@ struct FollowingFeedView: View {
                     EventDetailView(event: event)
                 }
             }
-            .searchable(text: $query, prompt: "Search followed events")
+            .searchable(
+                text: $query,
+                prompt: rail == .moments ? "Search moments" : "Search followed events"
+            )
             .refreshable { await model.refresh() }
+        }
+    }
+
+    @ViewBuilder
+    private var momentsContent: some View {
+        if model.followedCreators.isEmpty && model.hasLoaded {
+            followEmptyState
+        } else if !model.hasLoaded && model.isLoading {
+            ProgressView().frame(maxHeight: .infinity)
+        } else if momentResults.isEmpty {
+            ContentUnavailableViewCompat(
+                title: "No moments yet",
+                systemImage: "camera.on.rectangle",
+                message: "New photos and videos from creators you follow will appear here."
+            )
+        } else {
+            MomentsGridView(
+                items: momentResults,
+                hasMore: model.hasMoreFollowedMoments && query.isEmpty,
+                loadMore: { await model.loadMoreFollowedMoments() }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var eventsContent: some View {
+        AsyncContentView(
+            isLoading: model.isLoading,
+            hasLoaded: model.hasLoaded,
+            isEmpty: model.followedCreators.isEmpty || results.isEmpty,
+            errorMessage: model.loadError,
+            retry: { await model.refresh() }
+        ) {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    ForEach(results) { event in
+                        FollowingEventRow(event: event, creator: model.creator(id: event.creatorId))
+                            .contentShape(Rectangle())
+                            .onTapGesture { path.append(event.id) }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
+        } empty: {
+            emptyState
         }
     }
 
     @ViewBuilder
     private var emptyState: some View {
         if model.followedCreators.isEmpty {
-            ContentUnavailableViewCompat(
-                title: "Follow creators",
-                systemImage: "person.2.badge.plus",
-                message: "Follow creators from event pages or creator profiles to build your feed."
-            )
+            followEmptyState
         } else {
             ContentUnavailableViewCompat(
                 title: "No followed events yet",
@@ -59,6 +125,14 @@ struct FollowingFeedView: View {
                 message: "New events from creators you follow will appear here."
             )
         }
+    }
+
+    private var followEmptyState: some View {
+        ContentUnavailableViewCompat(
+            title: "Follow creators",
+            systemImage: "person.2.badge.plus",
+            message: "Follow creators from event pages or creator profiles to build your feed."
+        )
     }
 }
 

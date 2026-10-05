@@ -23,14 +23,18 @@ public actor InMemoryEventStore: EventStore {
     // MARK: Creators
 
     public func allCreators() async throws -> [Creator] { state.allCreators() }
+    public func topCreators(limit: Int) async throws -> [Creator] { state.topCreators(limit: limit) }
     public func creator(id: UUID) async throws -> Creator? { state.creator(id: id) }
     public func upsertCreator(_ creator: Creator) async throws { try state.upsertCreator(creator) }
 
     // MARK: Events
 
     public func publishedEvents() async throws -> [Event] { state.publishedEvents() }
-    public func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event] {
-        state.publishedEventsPage(limit: limit, offset: offset)
+    public func publishedEventsPage(limit: Int, offset: Int, followingOnly: Bool, popular: Bool) async throws -> [Event] {
+        state.publishedEventsPage(limit: limit, offset: offset, followingOnly: followingOnly, popular: popular)
+    }
+    public func mediaFeed(followingOnly: Bool, limit: Int, offset: Int) async throws -> [MediaFeedItem] {
+        state.mediaFeed(followingOnly: followingOnly, limit: limit, offset: offset)
     }
     public func events(forCreator creatorId: UUID) async throws -> [Event] { state.events(forCreator: creatorId) }
     public func event(id: UUID) async throws -> Event? { state.event(id: id) }

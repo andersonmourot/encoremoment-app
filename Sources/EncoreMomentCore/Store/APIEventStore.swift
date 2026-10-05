@@ -51,6 +51,13 @@ public actor APIEventStore: EventStore {
         try await get("creators")
     }
 
+    public func topCreators(limit: Int) async throws -> [Creator] {
+        try await get("creators", query: [
+            URLQueryItem(name: "sort", value: "followers"),
+            URLQueryItem(name: "limit", value: String(limit))
+        ])
+    }
+
     public func creator(id: UUID) async throws -> Creator? {
         try await getOptional("creators/\(id.uuidString)")
     }
@@ -62,15 +69,32 @@ public actor APIEventStore: EventStore {
     // MARK: Events
 
     public func publishedEvents() async throws -> [Event] {
-        try await publishedEventsPage(limit: 500, offset: 0)
+        try await publishedEventsPage(limit: 500, offset: 0, followingOnly: false, popular: false)
     }
 
-    public func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event] {
-        try await get("events", query: [
+    public func publishedEventsPage(
+        limit: Int,
+        offset: Int,
+        followingOnly: Bool,
+        popular: Bool
+    ) async throws -> [Event] {
+        var query = [
             URLQueryItem(name: "published", value: "true"),
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "offset", value: String(offset))
-        ])
+        ]
+        if followingOnly { query.append(URLQueryItem(name: "following", value: "true")) }
+        if popular { query.append(URLQueryItem(name: "sort", value: "popular")) }
+        return try await get("events", query: query)
+    }
+
+    public func mediaFeed(followingOnly: Bool, limit: Int, offset: Int) async throws -> [MediaFeedItem] {
+        var query = [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+        if followingOnly { query.append(URLQueryItem(name: "following", value: "true")) }
+        return try await get("media/feed", query: query)
     }
 
     public func events(forCreator creatorId: UUID) async throws -> [Event] {
