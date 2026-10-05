@@ -4,14 +4,14 @@ import EncoreMomentCore
 /// Vertical media feed — one full-width post per row, scrolled continuously
 /// like an Instagram/TikTok feed. Each post is media with a "break" strip below
 /// holding the uploader's name plus like and comment counts; tapping opens the
-/// swipeable ``MediaPagerView``.
+/// single-item ``MediaDetailView`` (left/right paging lives in event browsing).
 struct MomentsGridView: View {
     let items: [MediaFeedItem]
     var hasMore = false
     var loadMore: (() async -> Void)? = nil
 
     @EnvironmentObject private var model: AppModel
-    @State private var selected: MediaItem?
+    @State private var selected: MediaFeedItem?
 
     var body: some View {
         ScrollView {
@@ -19,7 +19,7 @@ struct MomentsGridView: View {
                 ForEach(items) { feedItem in
                     MomentCard(item: feedItem)
                         .contentShape(Rectangle())
-                        .onTapGesture { selected = feedItem.media }
+                        .onTapGesture { selected = feedItem }
                         .task {
                             if feedItem.id == items.last?.id, let loadMore {
                                 await loadMore()
@@ -34,25 +34,23 @@ struct MomentsGridView: View {
                 }
             }
         }
-        .fullScreenCover(item: $selected) { item in
-            MediaPagerView(
-                items: items.map(\.media),
-                initialSelection: item.id,
-                likeSummaries: likeSummaries,
+        // Feed items open just themselves — left/right paging only happens
+        // inside an event's media browser.
+        .fullScreenCover(item: $selected) { feedItem in
+            MediaDetailView(
+                item: feedItem.media,
+                initialLikeSummary: LikeSummary(
+                    eventID: feedItem.media.id,
+                    count: feedItem.likeCount,
+                    likedByViewer: feedItem.likedByViewer,
+                    commentCount: feedItem.commentCount
+                ),
                 onLikeChanged: { _ in
                     // Keep the Profile "Liked" rail in sync with like toggles.
                     Task { await model.loadLikedMedia() }
                 }
             )
         }
-    }
-
-    private var likeSummaries: [UUID: LikeSummary] {
-        Dictionary(
-            uniqueKeysWithValues: items.map {
-                ($0.id, LikeSummary(eventID: $0.id, count: $0.likeCount, likedByViewer: $0.likedByViewer))
-            }
-        )
     }
 
 }

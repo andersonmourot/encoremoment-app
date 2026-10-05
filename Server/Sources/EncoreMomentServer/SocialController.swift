@@ -177,12 +177,18 @@ struct SocialController: RouteCollection {
         let mediaByID = Dictionary(grouping: mediaLikes, by: \.mediaId)
         let commentByID = Dictionary(grouping: commentLikes, by: \.commentId)
 
+        // Comment counts per media item so viewers can badge the comment icon.
+        let mediaComments = mediaIDs.isEmpty ? [] : try await CommentModel.query(on: req.db)
+            .filter(\.$mediaId ~~ mediaIDs).all()
+        let commentCountByMedia = Dictionary(grouping: mediaComments, by: \.mediaId).mapValues(\.count)
+
         return EventLikeSummaries(
             event: eventSummary,
             media: mediaIDs.map { id in
                 let likes = mediaByID[id] ?? []
                 return LikeSummary(eventID: id, count: likes.count,
-                                   likedByViewer: viewerId.map { v in likes.contains { $0.userId == v } } ?? false)
+                                   likedByViewer: viewerId.map { v in likes.contains { $0.userId == v } } ?? false,
+                                   commentCount: commentCountByMedia[id] ?? 0)
             },
             comments: commentIDs.map { id in
                 let likes = commentByID[id] ?? []
@@ -455,6 +461,7 @@ struct SocialController: RouteCollection {
 
     private static func mediaSummary(mediaId: UUID, viewerId: UUID?, on db: Database) async throws -> LikeSummary {
         let count = try await MediaLikeModel.query(on: db).filter(\.$mediaId == mediaId).count()
+        let commentCount = try await CommentModel.query(on: db).filter(\.$mediaId == mediaId).count()
         var liked = false
         if let viewerId {
             liked = try await MediaLikeModel.query(on: db)
@@ -462,7 +469,7 @@ struct SocialController: RouteCollection {
                 .filter(\.$userId == viewerId)
                 .first() != nil
         }
-        return LikeSummary(eventID: mediaId, count: count, likedByViewer: liked)
+        return LikeSummary(eventID: mediaId, count: count, likedByViewer: liked, commentCount: commentCount)
     }
 
     /// The display name to attribute a comment to: the profile display name when

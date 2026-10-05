@@ -38,7 +38,7 @@ struct MediaDetailView: View {
                     Button {
                         showComments = true
                     } label: {
-                        Image(systemName: "bubble.right")
+                        Label("\(likeSummary?.commentCount ?? 0)", systemImage: "bubble.right")
                     }
                     .accessibilityLabel("Comments")
                 }
@@ -68,6 +68,14 @@ struct MediaDetailView: View {
                 likeSummary = initialLikeSummary.eventID == item.id
                     ? initialLikeSummary
                     : await model.mediaLikeSummary(mediaID: item.id, eventID: item.eventId)
+            }
+            // Refresh the summary (including comment count) after the comments
+            // sheet closes so the icon reflects posts made in it.
+            .onChange(of: showComments) { _, shown in
+                guard !shown else { return }
+                Task {
+                    likeSummary = await model.mediaLikeSummary(mediaID: item.id, eventID: item.eventId)
+                }
             }
         }
     }

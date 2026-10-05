@@ -237,9 +237,9 @@ struct ProfileView: View {
             Text("Liked")
         }
         .fullScreenCover(item: $selectedLikedMedia) { item in
-            MediaPagerView(
-                items: model.likedMediaItems,
-                initialSelection: item.id,
+            // Single item — left/right paging is only for an event's media.
+            MediaDetailView(
+                item: item,
                 onLikeChanged: { _ in
                     Task { await model.loadLikedMedia() }
                 }
