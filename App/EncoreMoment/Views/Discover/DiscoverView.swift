@@ -5,7 +5,6 @@ import EncoreMomentCore
 /// likes — and "Events" — the classic event feed ranked by popularity.
 struct DiscoverView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var query = ""
     @State private var path: [UUID] = []
     @State private var rail: Rail = .moments
 
@@ -14,17 +13,11 @@ struct DiscoverView: View {
     }
 
     private var results: [Event] {
-        EventFeed.search(model.events, query: query)
+        model.events
     }
 
     private var momentResults: [MediaFeedItem] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return model.moments }
-        return model.moments.filter {
-            [$0.eventTitle, $0.creatorName]
-                .joined(separator: " ")
-                .range(of: trimmed, options: .caseInsensitive) != nil
-        }
+        model.moments
     }
 
     var body: some View {
@@ -50,10 +43,6 @@ struct DiscoverView: View {
                     EventDetailView(event: event)
                 }
             }
-            .searchable(
-                text: $query,
-                prompt: rail == .moments ? "Search moments" : "Search events"
-            )
             .refreshable { await model.refresh() }
         }
     }
@@ -71,7 +60,7 @@ struct DiscoverView: View {
         } else {
             MomentsGridView(
                 items: momentResults,
-                hasMore: model.hasMoreMoments && query.isEmpty,
+                hasMore: model.hasMoreMoments,
                 loadMore: { await model.loadMoreMoments() }
             )
         }

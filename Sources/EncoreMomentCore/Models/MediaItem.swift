@@ -129,8 +129,14 @@ public struct MediaFeedItem: Identifiable, Codable, Sendable, Equatable {
     public var creatorName: String
     public var likeCount: Int
     public var likedByViewer: Bool
+    /// Number of comments on this media item.
+    public var commentCount: Int
 
     public var id: UUID { media.id }
+
+    private enum CodingKeys: String, CodingKey {
+        case media, eventID, eventTitle, creatorID, creatorName, likeCount, likedByViewer, commentCount
+    }
 
     public init(
         media: MediaItem,
@@ -139,7 +145,8 @@ public struct MediaFeedItem: Identifiable, Codable, Sendable, Equatable {
         creatorID: UUID,
         creatorName: String,
         likeCount: Int,
-        likedByViewer: Bool
+        likedByViewer: Bool,
+        commentCount: Int = 0
     ) {
         self.media = media
         self.eventID = eventID
@@ -148,5 +155,18 @@ public struct MediaFeedItem: Identifiable, Codable, Sendable, Equatable {
         self.creatorName = creatorName
         self.likeCount = likeCount
         self.likedByViewer = likedByViewer
+        self.commentCount = commentCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        media = try c.decode(MediaItem.self, forKey: .media)
+        eventID = try c.decode(UUID.self, forKey: .eventID)
+        eventTitle = try c.decode(String.self, forKey: .eventTitle)
+        creatorID = try c.decode(UUID.self, forKey: .creatorID)
+        creatorName = try c.decode(String.self, forKey: .creatorName)
+        likeCount = try c.decode(Int.self, forKey: .likeCount)
+        likedByViewer = try c.decode(Bool.self, forKey: .likedByViewer)
+        commentCount = try c.decodeIfPresent(Int.self, forKey: .commentCount) ?? 0
     }
 }

@@ -364,6 +364,12 @@ struct SocialController: RouteCollection {
             .filter(\.$id ~~ Array(Set(eventRows.map(\.creatorId))))
             .all().compactMap { creator in creator.id.map { ($0, creator.displayName) } })
 
+        // Comment counts for the page's media items.
+        let pageIds = page.compactMap(\.id)
+        let comments = pageIds.isEmpty ? [] : try await CommentModel.query(on: req.db)
+            .filter(\.$mediaId ~~ pageIds).all()
+        let commentCountByMedia = Dictionary(grouping: comments, by: \.mediaId).mapValues(\.count)
+
         return page.compactMap { media in
             guard let mid = media.id, let event = eventById[media.$event.id] else { return nil }
             return MediaFeedItem(
@@ -373,7 +379,8 @@ struct SocialController: RouteCollection {
                 creatorID: event.creatorId,
                 creatorName: creatorNames[event.creatorId] ?? "",
                 likeCount: countByMedia[mid] ?? 0,
-                likedByViewer: viewerLiked.contains(mid)
+                likedByViewer: viewerLiked.contains(mid),
+                commentCount: commentCountByMedia[mid] ?? 0
             )
         }
     }
