@@ -4,7 +4,7 @@ options:
   xcodeVersion: "16.0"
   projectFormat: xcode14_0
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   createIntermediateGroups: true
 
 packages:
