@@ -694,9 +694,7 @@ private struct CreatorHeader: View {
         HStack(spacing: 14) {
             PhotosPicker(selection: $avatarSelection, matching: .images) {
                 ZStack(alignment: .bottomTrailing) {
-                    RemoteImage(url: creator.avatarURL)
-                        .frame(width: 60, height: 60)
-                        .clipShape(Circle())
+                    AvatarView(creator: creator, size: 60)
                         .overlay(Circle().stroke(model.accentColor, lineWidth: 2))
 
                     ZStack {

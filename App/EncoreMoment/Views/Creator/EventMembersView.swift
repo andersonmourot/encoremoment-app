@@ -54,9 +54,7 @@ struct EventMembersView: View {
                             invite(creator)
                         } label: {
                             HStack(spacing: 10) {
-                                RemoteImage(url: creator.avatarURL)
-                                    .frame(width: 32, height: 32)
-                                    .clipShape(Circle())
+                                AvatarView(creator: creator, size: 32)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(creator.displayName)
                                         .font(.subheadline.weight(.medium))

@@ -91,9 +91,7 @@ private struct CreatorSearchRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RemoteImage(url: creator.avatarURL)
-                .frame(width: 44, height: 44)
-                .clipShape(Circle())
+            AvatarView(creator: creator, size: 44)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {

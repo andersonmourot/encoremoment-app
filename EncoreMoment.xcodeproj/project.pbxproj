@@ -22,6 +22,7 @@
 		5016D00B3F9333E28B729411 /* CreatorEventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FB4F13E7DE8C90FB0DB51B5 /* CreatorEventDetailView.swift */; };
 		503DBD8905F67FC98C18F68A /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A01B5A76F6FAD308C46AFA /* SavedView.swift */; };
 		565F7195FDED3FBDD9A3B5B2 /* TokenHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FBB99DDA73A3F03DFE184D /* TokenHolder.swift */; };
+		59F05002C52A66E3B44E84B3 /* DefaultAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7347B58F9FA3B2E22E480A1E /* DefaultAvatarView.swift */; };
 		6652CC5BC7193D4E1A641246 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10960571DED468950FAE0944 /* Theme.swift */; };
 		666BC2E51C15AEB34B572538 /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C3D8B5115A447DC598B07D /* MediaDetailView.swift */; };
 		6862E2E0B5E84EBD2F0B59A1 /* AddMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448421EE4B2378EA5003DB6A /* AddMediaView.swift */; };
@@ -73,6 +74,7 @@
 		505582090CB50777E2C0AB1C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		59D0202E8E7C8C21EFF49D07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64BD4858F5591A854DC2F48D /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
+		7347B58F9FA3B2E22E480A1E /* DefaultAvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultAvatarView.swift; sourceTree = "<group>"; };
 		75FBB99DDA73A3F03DFE184D /* TokenHolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenHolder.swift; sourceTree = "<group>"; };
 		839BE50A3B438C7DA76BEA63 /* CreateEventView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateEventView.swift; sourceTree = "<group>"; };
 		88C3EC3377CFC73AD941C695 /* MediaGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGridView.swift; sourceTree = "<group>"; };
@@ -252,6 +254,7 @@
 			isa = PBXGroup;
 			children = (
 				B7022405A21D5418BBE519BF /* ContentUnavailableViewCompat.swift */,
+				7347B58F9FA3B2E22E480A1E /* DefaultAvatarView.swift */,
 				BC56BA09285FE88D0A5214FB /* RemoteImage.swift */,
 				8F576FF0B34C2A4A367BFB39 /* ReportSheet.swift */,
 				D447338DB4E7E993FB700CD0 /* StateViews.swift */,
@@ -375,6 +378,7 @@
 				16DFF1DBD203A8AF8358D720 /* CreateEventView.swift in Sources */,
 				5016D00B3F9333E28B729411 /* CreatorEventDetailView.swift in Sources */,
 				B2E4FF31819D10C5FAAA7517 /* CreatorProfileView.swift in Sources */,
+				59F05002C52A66E3B44E84B3 /* DefaultAvatarView.swift in Sources */,
 				43790D30353E62D94DFD3EF8 /* DiscoverView.swift in Sources */,
 				718A8FAF52C70223AB97D521 /* EditEventView.swift in Sources */,
 				2129526FD66E07275A6BDF77 /* EncoreMomentApp.swift in Sources */,

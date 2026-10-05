@@ -24,9 +24,7 @@ struct CreatorProfileView: View {
             Section {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 14) {
-                        RemoteImage(url: liveCreator.avatarURL)
-                            .frame(width: 72, height: 72)
-                            .clipShape(Circle())
+                        AvatarView(creator: liveCreator, size: 72)
                             .overlay(Circle().stroke(model.accentColor, lineWidth: 2))
 
                         VStack(alignment: .leading, spacing: 3) {
