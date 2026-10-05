@@ -29,16 +29,17 @@ struct CreatorController: RouteCollection {
         protected.put(":id", use: update)
     }
 
-    func index(req: Request) async throws -> [Creator] {
+    func index(req: Request) async throws -> Response {
         var query = CreatorModel.query(on: req.db)
         let blocked = try await Moderation.blockedCreatorIDs(for: req)
         if !blocked.isEmpty {
             query = query.filter(\.$id !~ Array(blocked))
         }
-        return try await query
+        let creators = try await query
             .sort(\.$displayName)
             .all()
             .map { $0.toDTO() }
+        return try ETagResponder.respond(creators, on: req)
     }
 
     func show(req: Request) async throws -> Creator {
@@ -90,9 +91,16 @@ struct EventController: RouteCollection {
         protected.post(":id", "members", use: inviteMember)
         protected.delete(":id", "members", ":creatorId", use: removeMember)
         protected.get(":id", "membership", use: myMembership)
+        protected.post(":id", "invite-links", use: createInviteLink)
+
+        // Shareable invite links.
+        let invites = routes.grouped("invites")
+        invites.grouped(UserToken.authenticator()).get(":code", use: inviteLinkPreview)
+        invites.grouped(UserToken.authenticator(), UserToken.guardMiddleware())
+            .post(":code", "redeem", use: redeemInviteLink)
     }
 
-    func index(req: Request) async throws -> [Event] {
+    func index(req: Request) async throws -> Response {
         var query = EventModel.query(on: req.db).with(\.$media)
         if let published = req.query[Bool.self, at: "published"], published {
             query = query.filter(\.$isPublished == true)
@@ -104,19 +112,91 @@ struct EventController: RouteCollection {
         if !blocked.isEmpty {
             query = query.filter(\.$creatorId !~ Array(blocked))
         }
-        var events = try await query.sort(\.$date, .descending).all()
         // Invite-only events are visible to their owner and invited members.
-        if events.contains(where: \.inviteOnly) {
-            let creatorId = req.auth.get(UserToken.self)?.creatorId
-            var memberEventIds = Set<UUID>()
-            if let creatorId {
-                memberEventIds = try await EventAccess.memberEventIDs(for: creatorId, on: req.db)
+        // Filtering in SQL keeps `offset`/`limit` pagination honest.
+        let viewerCreatorId = req.auth.get(UserToken.self)?.creatorId
+        var memberEventIds = Set<UUID>()
+        if let viewerCreatorId {
+            memberEventIds = try await EventAccess.memberEventIDs(for: viewerCreatorId, on: req.db)
+        }
+        query = query.group(.or) { group in
+            group.filter(\.$inviteOnly == false)
+            if let viewerCreatorId {
+                group.filter(\.$creatorId == viewerCreatorId)
             }
-            events = events.filter {
-                !$0.inviteOnly || $0.creatorId == creatorId || memberEventIds.contains($0.id ?? UUID())
+            if !memberEventIds.isEmpty {
+                group.filter(\.$id ~~ Array(memberEventIds))
             }
         }
-        return events.map { $0.toDTO() }
+        // Pagination: `?limit=N&offset=M` (offset = events already loaded).
+        if let limit = req.query[Int.self, at: "limit"] {
+            let clamped = max(1, min(limit, 100))
+            let offset = max(0, req.query[Int.self, at: "offset"] ?? 0)
+            query = query.range(offset..<(offset + clamped))
+        }
+        let events = try await query.sort(\.$date, .descending).all()
+        return try ETagResponder.respond(events.map { $0.toDTO() }, on: req)
+    }
+
+    /// Creates a shareable invite link for an owned event.
+    func createInviteLink(req: Request) async throws -> EventInviteLink {
+        let token = try req.auth.require(UserToken.self)
+        guard let eventId = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
+        let role = (try? req.content.decode(InviteLinkCreateRequest.self))?.role ?? .viewer
+        let event = try await Self.requireOwnedEvent(eventId, token: token, on: req.db)
+        let link = EventInviteLinkModel(
+            eventId: try event.requireID(),
+            role: role,
+            createdBy: try token.requireUserID()
+        )
+        try await link.create(on: req.db)
+        return link.toDTO()
+    }
+
+    /// Public details of an invite link — event title and granted role.
+    func inviteLinkPreview(req: Request) async throws -> InviteLinkPreview {
+        guard let code = req.parameters.get("code"),
+              let link = try await EventInviteLinkModel.query(on: req.db)
+                .filter(\.$code == code).first(),
+              let event = try await EventModel.find(link.eventId, on: req.db) else {
+            throw Abort(.notFound, reason: "Invite link is invalid or expired.")
+        }
+        return InviteLinkPreview(eventID: link.eventId, eventTitle: event.title, role: link.memberRole)
+    }
+
+    /// Joins the link's event with its role as the signed-in user.
+    func redeemInviteLink(req: Request) async throws -> Event {
+        let token = try req.auth.require(UserToken.self)
+        let userId = try token.requireUserID()
+        let creatorId = try token.requireCreatorID()
+        guard let code = req.parameters.get("code"),
+              let link = try await EventInviteLinkModel.query(on: req.db)
+                .filter(\.$code == code).first(),
+              let event = try await EventModel.find(link.eventId, on: req.db) else {
+            throw Abort(.notFound, reason: "Invite link is invalid or expired.")
+        }
+        if event.creatorId != creatorId {
+            let existing = try await EventMemberModel.query(on: req.db)
+                .filter(\.$eventId == link.eventId).filter(\.$creatorId == creatorId).first()
+            if let existing {
+                existing.role = link.role
+                try await existing.save(on: req.db)
+            } else {
+                try await EventMemberModel(
+                    eventId: link.eventId, creatorId: creatorId, role: link.memberRole
+                ).create(on: req.db)
+                let name = try await NotificationCenter.actorName(for: userId, on: req.db)
+                try await NotificationCenter.notifyCreator(
+                    creatorId: event.creatorId,
+                    kind: .invite,
+                    title: "Invite accepted",
+                    body: "\(name) joined \(event.title) via your invite link.",
+                    eventId: event.id,
+                    on: req.db
+                )
+            }
+        }
+        return try await Self.reload(link.eventId, on: req.db).toDTO()
     }
 
     func show(req: Request) async throws -> Event {
@@ -209,23 +289,26 @@ struct EventController: RouteCollection {
         let event = try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
 
         let body = try req.content.decode(MediaUploadRequest.self)
-        let mediaURL = try await UploadStorage.save(
+        // Media and thumbnail go to storage in parallel.
+        async let mediaURL = UploadStorage.save(
             body.file,
             fallbackExtension: body.kind == .video ? "mp4" : "jpg",
             req: req
         )
-        let thumbnailURL: URL?
+        var thumbnailTask: Task<URL, Error>?
         if let thumbnail = body.thumbnail {
-            thumbnailURL = try await UploadStorage.save(thumbnail, fallbackExtension: "jpg", req: req)
-        } else {
-            thumbnailURL = nil
+            thumbnailTask = Task {
+                try await UploadStorage.save(thumbnail, fallbackExtension: "jpg", req: req)
+            }
         }
+        let resolvedMediaURL = try await mediaURL
+        let thumbnailURL = try await thumbnailTask?.value
         let uploaderID = try token.requireUserID()
         let dto = MediaItem(
             eventId: eventId,
             kind: body.kind,
-            url: mediaURL,
-            thumbnailURL: thumbnailURL ?? (body.kind == .photo ? mediaURL : nil),
+            url: resolvedMediaURL,
+            thumbnailURL: thumbnailURL ?? (body.kind == .photo ? resolvedMediaURL : nil),
             uploaderID: uploaderID,
             uploaderName: try await Self.displayName(for: uploaderID, on: req.db),
             isOfficial: try await EventAccess.isOfficialUploader(event, token: token, on: req.db),

@@ -22,6 +22,13 @@ final class AppModel: ObservableObject {
     /// Set when a one-off action (create/update/delete) fails; surfaced as an alert.
     @Published var errorMessage: String?
 
+    /// Whether more feed pages are available to load.
+    @Published private(set) var hasMoreEvents = false
+    /// Fraction (0–1) of the in-flight media upload, or `nil` when idle.
+    @Published private(set) var uploadProgress: Double?
+
+    static let feedPageSize = 25
+
     /// The profile currently acting in "creator mode" (the signed-in account),
     /// or `nil` when browsing as an anonymous viewer or a legacy account.
     @Published var currentCreator: Creator?
@@ -93,7 +100,9 @@ final class AppModel: ObservableObject {
     /// The shared backend so events and uploads are visible across all users.
     /// Wrapped in an ``AuthenticatedTransport`` so mutations carry the bearer token.
     private static func makeDefaultStore() -> EventStore {
-        let transport = AuthenticatedTransport { TokenHolder.shared.token }
+        let transport = ETagCachingTransport(
+            wrapping: AuthenticatedTransport { TokenHolder.shared.token }
+        )
         return APIEventStore(baseURL: AppConfig.apiBaseURL, transport: transport)
     }
 
@@ -115,7 +124,9 @@ final class AppModel: ObservableObject {
     }
 
     private static func makeDefaultSocialStore() -> SocialStore {
-        let transport = AuthenticatedTransport { TokenHolder.shared.token }
+        let transport = ETagCachingTransport(
+            wrapping: AuthenticatedTransport { TokenHolder.shared.token }
+        )
         return APISocialStore(baseURL: AppConfig.apiBaseURL, transport: transport)
     }
 
@@ -130,6 +141,9 @@ final class AppModel: ObservableObject {
         }
         fanPrefs = (try? await fanStore.preferences()) ?? FanPreferences()
         await refresh()
+        #if canImport(UIKit)
+        if account != nil { PushRegistration.shared.syncNow() }
+        #endif
     }
 
     func refresh() async {
@@ -137,14 +151,15 @@ final class AppModel: ObservableObject {
         loadError = nil
         defer { isLoading = false; hasLoaded = true }
         do {
-            async let published = store.publishedEvents()
+            async let published = store.publishedEventsPage(limit: Self.feedPageSize, offset: 0)
             async let people = store.allCreators()
-            let allEvents = try await published
+            let firstPage = try await published
             let allCreators = try await people
             // Blocked creators are hidden from every feed; the server also
             // filters for signed-in users, and we filter here so anonymous
             // blocks and instant removal work too.
-            self.events = allEvents.filter { !fanPrefs.isBlocked($0.creatorId) }
+            self.events = firstPage.filter { !fanPrefs.isBlocked($0.creatorId) }
+            self.hasMoreEvents = firstPage.count == Self.feedPageSize
             self.creators = allCreators.filter { !fanPrefs.isBlocked($0.id) }
             // Signed-in users get blocked profiles from /me/blocks (the server
             // filters them out of /creators); anonymous users derive them here.
@@ -161,6 +176,19 @@ final class AppModel: ObservableObject {
         }
         await loadCreatorStats()
         await loadNotifications()
+    }
+
+    /// Appends the next page of the public feed. Called when the user scrolls
+    /// near the bottom; silently no-ops when there's nothing more to load.
+    func loadMoreEvents() async {
+        guard hasMoreEvents, !isLoading else { return }
+        guard let page = try? await store.publishedEventsPage(
+            limit: Self.feedPageSize, offset: events.count
+        ) else { return }
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorId) }
+            .filter { incoming in !events.contains { $0.id == incoming.id } }
+        events.append(contentsOf: fresh)
+        hasMoreEvents = page.count == Self.feedPageSize
     }
 
     // MARK: Analytics
@@ -256,13 +284,17 @@ final class AppModel: ObservableObject {
         thumbnailData: Data?,
         to eventId: UUID
     ) async throws {
+        uploadProgress = 0
+        defer { uploadProgress = nil }
         _ = try await mediaUploadService.upload(
             data: data,
             fileExtension: fileExtension,
             kind: kind,
             to: eventId,
             thumbnailData: thumbnailData
-        )
+        ) { [weak self] fraction in
+            Task { @MainActor in self?.uploadProgress = fraction }
+        }
         await refresh()
     }
 
@@ -410,10 +442,42 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Resolves and presents an event opened via a ``DeepLink`` URL.
+    /// Resolves and presents an event opened via a ``DeepLink`` URL; invite
+    /// links redeem the membership first, then open the event.
     func handle(url: URL) async {
-        guard case .event(let id)? = DeepLink(url: url) else { return }
-        deepLinkedEvent = await resolveEvent(id: id)
+        switch DeepLink(url: url) {
+        case .event(let id):
+            deepLinkedEvent = await resolveEvent(id: id)
+        case .invite(let code):
+            await redeemInviteLink(code: code)
+        case .creator, nil:
+            break
+        }
+    }
+
+    /// Joins an event via an invite link, then opens it.
+    func redeemInviteLink(code: String) async {
+        guard isAccountSignedIn else {
+            errorMessage = "Sign in to accept this event invite."
+            return
+        }
+        do {
+            let event = try await store.redeemInviteLink(code: code)
+            await refresh()
+            deepLinkedEvent = event
+        } catch {
+            errorMessage = "This invite link is invalid or expired."
+        }
+    }
+
+    /// Creates a shareable invite link for an owned event.
+    func createInviteLink(role: EventMemberRole, for eventID: UUID) async -> EventInviteLink? {
+        do {
+            return try await store.createInviteLink(role: role, for: eventID)
+        } catch {
+            errorMessage = "Couldn't create an invite link. Please try again."
+            return nil
+        }
     }
 
     /// Looks up an event from the loaded feed, falling back to the store.
@@ -442,6 +506,9 @@ final class AppModel: ObservableObject {
             fanPrefs = (try? await api.preferences()) ?? FanPreferences()
         }
         await refresh()
+        #if canImport(UIKit)
+        PushRegistration.shared.syncNow()
+        #endif
     }
 
     /// Clears account state on sign-out (token is cleared separately by AuthService)
@@ -593,6 +660,12 @@ final class AppModel: ObservableObject {
 
     func likeSummary(forEvent eventID: UUID) async -> LikeSummary {
         (try? await socialStore.likeSummary(forEvent: eventID)) ?? LikeSummary(eventID: eventID)
+    }
+
+    /// Event + media + comment like state in one call.
+    func likeSummaries(forEvent eventID: UUID) async -> EventLikeSummaries {
+        (try? await socialStore.likeSummaries(forEvent: eventID))
+            ?? EventLikeSummaries(event: LikeSummary(eventID: eventID))
     }
 
     /// Toggles the viewer's like; returns the updated summary, or nil on failure.

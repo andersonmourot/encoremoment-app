@@ -9,24 +9,27 @@ public struct StoreState: Codable, Sendable, Equatable {
     public var creators: [UUID: Creator]
     public var events: [UUID: Event]
     public var members: [EventMember]
+    public var inviteLinks: [EventInviteLink]
 
-    public init(creators: [Creator] = [], events: [Event] = [], members: [EventMember] = []) {
+    public init(creators: [Creator] = [], events: [Event] = [], members: [EventMember] = [], inviteLinks: [EventInviteLink] = []) {
         self.creators = Dictionary(uniqueKeysWithValues: creators.map { ($0.id, $0) })
         self.events = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
         self.members = members
+        self.inviteLinks = inviteLinks
     }
 
     private enum CodingKeys: String, CodingKey {
-        case creators, events, members
+        case creators, events, members, inviteLinks
     }
 
-    /// Backward-compatible decode: files written before members existed have
-    /// no `members` key.
+    /// Backward-compatible decode: files written before members/invite links
+    /// existed have neither key.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         creators = try container.decode([UUID: Creator].self, forKey: .creators)
         events = try container.decode([UUID: Event].self, forKey: .events)
         members = try container.decodeIfPresent([EventMember].self, forKey: .members) ?? []
+        inviteLinks = try container.decodeIfPresent([EventInviteLink].self, forKey: .inviteLinks) ?? []
     }
 
     // MARK: Queries
@@ -39,6 +42,12 @@ public struct StoreState: Codable, Sendable, Equatable {
 
     public func publishedEvents() -> [Event] {
         events.values.filter { $0.isPublished }.sorted { $0.date > $1.date }
+    }
+
+    public func publishedEventsPage(limit: Int, offset: Int) -> [Event] {
+        let all = publishedEvents()
+        guard offset < all.count else { return [] }
+        return Array(all.dropFirst(offset).prefix(limit))
     }
 
     public func events(forCreator creatorId: UUID) -> [Event] {
@@ -84,6 +93,7 @@ public struct StoreState: Codable, Sendable, Equatable {
             throw EventStoreError.eventNotFound(id)
         }
         members.removeAll { $0.eventID == id }
+        inviteLinks.removeAll { $0.eventID == id }
     }
 
     public mutating func addMedia(_ item: MediaItem, toEvent eventId: UUID) throws {
@@ -146,5 +156,54 @@ public struct StoreState: Codable, Sendable, Equatable {
     public mutating func removeMember(creatorID: UUID, from eventID: UUID) throws -> [EventMember] {
         members.removeAll { $0.eventID == eventID && $0.creatorID == creatorID }
         return members(of: eventID)
+    }
+
+    // MARK: Invite links
+
+    @discardableResult
+    public mutating func createInviteLink(role: EventMemberRole, for eventID: UUID) throws -> EventInviteLink {
+        guard events[eventID] != nil else { throw EventStoreError.eventNotFound(eventID) }
+        let link = EventInviteLink(code: Self.newInviteCode(), eventID: eventID, role: role)
+        inviteLinks.append(link)
+        return link
+    }
+
+    public func inviteLinkPreview(code: String) throws -> InviteLinkPreview {
+        guard let link = inviteLinks.first(where: { $0.code == code }),
+              let event = events[link.eventID] else {
+            throw EventStoreError.eventNotFound(UUID())
+        }
+        return InviteLinkPreview(eventID: event.id, eventTitle: event.title, role: link.role)
+    }
+
+    /// Redeems a link as `creatorID` — joins the event (or re-roles an existing
+    /// membership) and returns the event.
+    @discardableResult
+    public mutating func redeemInviteLink(code: String, as creatorID: UUID) throws -> Event {
+        guard let link = inviteLinks.first(where: { $0.code == code }) else {
+            throw EventStoreError.validation("Invite link is invalid or expired.")
+        }
+        guard let event = events[link.eventID] else { throw EventStoreError.eventNotFound(link.eventID) }
+        guard let creator = creators[creatorID] else { throw EventStoreError.creatorNotFound(creatorID) }
+        guard creator.id != event.creatorId else {
+            throw EventStoreError.validation("You already own this event.")
+        }
+        if let index = members.firstIndex(where: { $0.eventID == link.eventID && $0.creatorID == creatorID }) {
+            members[index].role = link.role
+        } else {
+            members.append(EventMember(
+                eventID: link.eventID, creatorID: creatorID, role: link.role,
+                displayName: creator.displayName, handle: creator.handle
+            ))
+        }
+        return event
+    }
+
+    private static func newInviteCode() -> String {
+        let bytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

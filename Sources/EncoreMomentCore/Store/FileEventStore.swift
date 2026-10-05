@@ -33,6 +33,9 @@ public actor FileEventStore: EventStore {
     // MARK: Events
 
     public func publishedEvents() async throws -> [Event] { state.publishedEvents() }
+    public func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event] {
+        state.publishedEventsPage(limit: limit, offset: offset)
+    }
     public func events(forCreator creatorId: UUID) async throws -> [Event] { state.events(forCreator: creatorId) }
     public func event(id: UUID) async throws -> Event? { state.event(id: id) }
     public func createEvent(_ event: Event) async throws { try mutate { try $0.createEvent(event) } }
@@ -65,6 +68,23 @@ public actor FileEventStore: EventStore {
     public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
         try mutate { try $0.removeMember(creatorID: creatorID, from: eventID) }
         return state.members(of: eventID)
+    }
+
+    // MARK: Invite links
+
+    public func createInviteLink(role: EventMemberRole, for eventID: UUID) async throws -> EventInviteLink {
+        var created: EventInviteLink?
+        try mutate { created = try $0.createInviteLink(role: role, for: eventID) }
+        return created!
+    }
+
+    public func inviteLinkPreview(code: String) async throws -> InviteLinkPreview {
+        try state.inviteLinkPreview(code: code)
+    }
+
+    /// The file store is anonymous — no signed-in user to join as.
+    public func redeemInviteLink(code: String) async throws -> Event {
+        throw EventStoreError.validation("Sign in to redeem an invite link.")
     }
 
     // MARK: Persistence

@@ -68,6 +68,8 @@ enum NotificationCenter {
             eventId: eventId,
             creatorId: creatorId
         ).create(on: db)
+        // Best-effort push; no-ops when APNs isn't configured.
+        await PushService.send(userId: userId, title: title, body: body, on: db, logger: db.logger)
     }
 
     /// Display name for the user who triggered a notification — their creator

@@ -18,6 +18,8 @@ struct FanController: RouteCollection {
         me.post("blocks", ":creatorId", use: block)
         me.delete("blocks", ":creatorId", use: unblock)
         me.get("blocks", use: listBlocks)
+        me.put("device-token", use: registerDeviceToken)
+        me.delete("device-token", ":token", use: removeDeviceToken)
     }
 
     func preferences(req: Request) async throws -> FanPreferences {
@@ -148,6 +150,36 @@ struct FanController: RouteCollection {
             .sort(\.$displayName)
             .all()
             .map { $0.toDTO() }
+    }
+
+    struct DeviceTokenBody: Content { let token: String }
+
+    /// Registers/updates an APNs device token for the caller's account.
+    func registerDeviceToken(req: Request) async throws -> HTTPStatus {
+        let uid = try userId(req)
+        let token = try req.content.decode(DeviceTokenBody.self).token
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard token.count >= 16, token.allSatisfy(\.isHexDigit) else {
+            throw Abort(.unprocessableEntity, reason: "Invalid device token.")
+        }
+        // Rekey the token to this user if another account previously owned it
+        // (e.g. sign-out then sign-in as someone else on the same device).
+        if let existing = try await DeviceTokenModel.query(on: req.db)
+            .filter(\.$token == token).first() {
+            existing.userId = uid
+            try await existing.save(on: req.db)
+        } else {
+            try await DeviceTokenModel(userId: uid, token: token).create(on: req.db)
+        }
+        return .noContent
+    }
+
+    func removeDeviceToken(req: Request) async throws -> HTTPStatus {
+        let uid = try userId(req)
+        guard let token = req.parameters.get("token") else { throw Abort(.badRequest) }
+        try await DeviceTokenModel.query(on: req.db)
+            .filter(\.$userId == uid).filter(\.$token == token).delete()
+        return .noContent
     }
 
     // MARK: Helpers

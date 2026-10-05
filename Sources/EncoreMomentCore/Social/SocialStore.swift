@@ -19,6 +19,8 @@ public protocol SocialStore: Sendable {
     func setMediaLike(mediaID: UUID, eventID: UUID, _ liked: Bool) async throws -> LikeSummary
     /// The like count and the viewer's like state for an event.
     func likeSummary(forEvent eventID: UUID) async throws -> LikeSummary
+    /// Event, media, and comment like summaries in a single call.
+    func likeSummaries(forEvent eventID: UUID) async throws -> EventLikeSummaries
     /// Sets the viewer's like state; returns the updated summary.
     @discardableResult
     func setLike(eventID: UUID, _ liked: Bool) async throws -> LikeSummary
@@ -97,6 +99,16 @@ public actor InMemorySocialStore: SocialStore {
     public func likeSummary(forEvent eventID: UUID) async throws -> LikeSummary {
         let likes = likesByEvent[eventID] ?? []
         return LikeSummary(eventID: eventID, count: likes.count, likedByViewer: likes.contains(viewerID))
+    }
+
+    public func likeSummaries(forEvent eventID: UUID) async throws -> EventLikeSummaries {
+        let media = likesByMedia.keys
+            .map { LikeSummary(eventID: $0, count: (likesByMedia[$0] ?? []).count, likedByViewer: (likesByMedia[$0] ?? []).contains(viewerID)) }
+        let comments = (commentsByEvent[eventID] ?? []).map { comment in
+            let likes = likesByComment[comment.id] ?? []
+            return LikeSummary(eventID: comment.id, count: likes.count, likedByViewer: likes.contains(viewerID))
+        }
+        return EventLikeSummaries(event: try await likeSummary(forEvent: eventID), media: media, comments: comments)
     }
 
     @discardableResult

@@ -13,6 +13,8 @@ struct EventMembersView: View {
     @State private var query = ""
     @State private var role: EventMemberRole = .viewer
     @State private var isInviting = false
+    @State private var inviteLinkURL: URL?
+    @State private var isCreatingLink = false
 
     /// The typed handle/name with `@` and whitespace trimmed.
     private var cleanedQuery: String {
@@ -88,6 +90,16 @@ struct EventMembersView: View {
                     Text("Collaborators can add photos and videos to the Official section. Viewers can only see the event.")
                 }
 
+                Section {
+                    ShareLink(item: inviteLinkURL ?? DeepLink.event(event.id).webURL) {
+                        Label("Copy invite link", systemImage: "link")
+                    }
+                    .disabled(isCreatingLink)
+                    .task { await ensureInviteLink() }
+                } footer: {
+                    Text("Anyone with this link joins as a \(role.displayName.lowercased()) when they sign in.")
+                }
+
                 Section("Invited (\(members.count))") {
                     if members.isEmpty {
                         Text("Nobody invited yet.")
@@ -137,6 +149,17 @@ struct EventMembersView: View {
                 }
             }
             .task { members = await model.eventMembers(forEvent: event.id) }
+        }
+    }
+
+    /// Creates (once) the shareable link for the selected role; tapping Share
+    /// again after changing the role makes a fresh link.
+    private func ensureInviteLink() async {
+        guard inviteLinkURL == nil, !isCreatingLink else { return }
+        isCreatingLink = true
+        defer { isCreatingLink = false }
+        if let link = await model.createInviteLink(role: role, for: event.id) {
+            inviteLinkURL = DeepLink.invite(link.code).webURL
         }
     }
 

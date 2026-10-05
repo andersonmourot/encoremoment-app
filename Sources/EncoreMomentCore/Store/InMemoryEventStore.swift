@@ -29,6 +29,9 @@ public actor InMemoryEventStore: EventStore {
     // MARK: Events
 
     public func publishedEvents() async throws -> [Event] { state.publishedEvents() }
+    public func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event] {
+        state.publishedEventsPage(limit: limit, offset: offset)
+    }
     public func events(forCreator creatorId: UUID) async throws -> [Event] { state.events(forCreator: creatorId) }
     public func event(id: UUID) async throws -> Event? { state.event(id: id) }
     public func createEvent(_ event: Event) async throws { try state.createEvent(event) }
@@ -61,5 +64,22 @@ public actor InMemoryEventStore: EventStore {
     @discardableResult
     public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
         try state.removeMember(creatorID: creatorID, from: eventID)
+    }
+
+    // MARK: Invite links
+
+    public func createInviteLink(role: EventMemberRole, for eventID: UUID) async throws -> EventInviteLink {
+        try state.createInviteLink(role: role, for: eventID)
+    }
+
+    public func inviteLinkPreview(code: String) async throws -> InviteLinkPreview {
+        try state.inviteLinkPreview(code: code)
+    }
+
+    public func redeemInviteLink(code: String) async throws -> Event {
+        guard let viewerCreatorID else {
+            throw EventStoreError.validation("Sign in to redeem an invite link.")
+        }
+        return try state.redeemInviteLink(code: code, as: viewerCreatorID)
     }
 }

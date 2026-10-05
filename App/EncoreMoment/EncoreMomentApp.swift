@@ -1,7 +1,26 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+#if canImport(UIKit)
+private final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        Task { @MainActor in
+            PushRegistration.shared.didReceiveDeviceToken(deviceToken)
+        }
+    }
+}
+#endif
 
 @main
 struct EncoreMomentApp: App {
+    #if canImport(UIKit)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     @StateObject private var model = AppModel()
     @StateObject private var auth = AuthService()
     @StateObject private var settings = AppSettings()

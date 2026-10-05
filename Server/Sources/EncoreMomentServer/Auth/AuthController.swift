@@ -197,6 +197,7 @@ struct AuthController: RouteCollection {
             try await BlockModel.query(on: db).filter(\.$userId == userId).delete()
             try await ReportModel.query(on: db).filter(\.$userId == userId).delete()
             try await NotificationModel.query(on: db).filter(\.$userId == userId).delete()
+            try await DeviceTokenModel.query(on: db).filter(\.$userId == userId).delete()
             try await MediaModel.query(on: db).filter(\.$uploaderId == userId).delete()
             if let creatorId {
                 // Their memberships on other people's events.

@@ -6,6 +6,9 @@ import EncoreMomentCore
 struct MediaGridView: View {
     let media: [MediaItem]
     var onTap: (MediaItem) -> Void
+    /// Like state per item, shown as a heart overlay on each thumbnail.
+    var likeSummary: ((MediaItem) -> LikeSummary?)? = nil
+    var onToggleLike: ((MediaItem) -> Void)? = nil
     var onSetCover: ((MediaItem) -> Void)? = nil
     var canDelete: ((MediaItem) -> Bool)? = nil
     var onDelete: ((MediaItem) -> Void)? = nil
@@ -22,7 +25,11 @@ struct MediaGridView: View {
         LazyVGrid(columns: columns, spacing: spacing) {
             ForEach(media) { item in
                 Button { onTap(item) } label: {
-                    MediaGridCell(item: item)
+                    MediaGridCell(
+                        item: item,
+                        likeSummary: likeSummary?(item),
+                        onToggleLike: onToggleLike.map { toggle in { toggle(item) } }
+                    )
                 }
                 .buttonStyle(.plain)
                 .onDrag {
@@ -91,6 +98,8 @@ private struct MediaGridDropDelegate: DropDelegate {
 
 private struct MediaGridCell: View {
     let item: MediaItem
+    var likeSummary: LikeSummary? = nil
+    var onToggleLike: (() -> Void)? = nil
 
     var body: some View {
         Rectangle()
@@ -104,6 +113,38 @@ private struct MediaGridCell: View {
             .overlay(alignment: .bottomLeading) {
                 videoBadge
             }
+            .overlay(alignment: .bottomTrailing) {
+                likeBadge
+            }
+    }
+
+    @ViewBuilder
+    private var likeBadge: some View {
+        if let likeSummary {
+            let liked = likeSummary.likedByViewer
+            Group {
+                if let onToggleLike {
+                    Button(action: onToggleLike) {
+                        likeBadgeContent(count: likeSummary.count, liked: liked)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    likeBadgeContent(count: likeSummary.count, liked: liked)
+                }
+            }
+            .accessibilityLabel("\(likeSummary.count) like\(likeSummary.count == 1 ? "" : "s")")
+        }
+    }
+
+    private func likeBadgeContent(count: Int, liked: Bool) -> some View {
+        Label("\(count)", systemImage: liked ? "heart.fill" : "heart")
+            .labelStyle(.titleAndIcon)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(liked ? .pink : .primary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(6)
     }
 
     @ViewBuilder

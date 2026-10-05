@@ -86,6 +86,10 @@ public actor APISocialStore: SocialStore {
         try await request("events/\(eventID.uuidString)/likes", method: "GET")
     }
 
+    public func likeSummaries(forEvent eventID: UUID) async throws -> EventLikeSummaries {
+        try await request("events/\(eventID.uuidString)/likes/all", method: "GET")
+    }
+
     @discardableResult
     public func setLike(eventID: UUID, _ liked: Bool) async throws -> LikeSummary {
         try await request("events/\(eventID.uuidString)/like", method: liked ? "POST" : "DELETE")

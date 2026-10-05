@@ -56,8 +56,19 @@ struct DiscoverView: View {
                                 EventRow(event: event, creator: model.creator(id: event.creatorId))
                                     .contentShape(Rectangle())
                                     .onTapGesture { path.append(event.id) }
+                                    .task {
+                                        if event.id == results.last?.id {
+                                            await model.loadMoreEvents()
+                                        }
+                                    }
+                            }
+
+                            if model.hasMoreEvents {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                            }
                         }
-                    }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                 }

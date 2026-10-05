@@ -23,6 +23,9 @@ public protocol EventStore: Sendable {
     // Events
     /// All published events, intended for the public Discover feed.
     func publishedEvents() async throws -> [Event]
+    /// A page of published events for the Discover feed. `offset` is the number
+    /// of already-loaded events; fewer than `limit` results means no more pages.
+    func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event]
     /// Every event owned by a creator, including unpublished drafts.
     func events(forCreator creatorId: UUID) async throws -> [Event]
     func event(id: UUID) async throws -> Event?
@@ -45,4 +48,12 @@ public protocol EventStore: Sendable {
     /// Removes an invited member; returns the updated member list.
     @discardableResult
     func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember]
+
+    // Invite links
+    /// Creates a shareable invite link for an event (owner only).
+    func createInviteLink(role: EventMemberRole, for eventID: UUID) async throws -> EventInviteLink
+    /// Public preview of an invite link (event title + role) before redeeming.
+    func inviteLinkPreview(code: String) async throws -> InviteLinkPreview
+    /// Redeems an invite link as the signed-in user; returns the joined event.
+    func redeemInviteLink(code: String) async throws -> Event
 }

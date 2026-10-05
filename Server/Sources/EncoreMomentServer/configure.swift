@@ -57,6 +57,8 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(AddEventInviteOnly())
     app.migrations.add(AddMediaOfficial())
     app.migrations.add(CreateEventMember())
+    app.migrations.add(CreateEventInviteLink())
+    app.migrations.add(CreateDeviceToken())
 
     // The InTheMomentServer -> EncoreMomentServer module rename changed the
     // qualified names Fluent recorded in _fluent_migrations, so an existing
@@ -73,6 +75,8 @@ public func configure(_ app: Application) async throws {
         WHERE name LIKE 'EncoreMomentServer.%'
         """).run()
     }
+    PushService.configure(app: app)
+
     try await app.autoMigrate()
 
     // Re-home any media that landed on the local uploads volume while R2 was

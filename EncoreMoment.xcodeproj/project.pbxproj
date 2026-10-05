@@ -40,6 +40,7 @@
 		AE3061101EBEA80316420C84 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17D3DC39F0B8CF2F78F9B35 /* AuthView.swift */; };
 		B2E4FF31819D10C5FAAA7517 /* CreatorProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E7D56F75675EB0CAC71135E /* CreatorProfileView.swift */; };
 		BCA8D455D5D1E9EEFB9AF0AD /* MediaGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88C3EC3377CFC73AD941C695 /* MediaGridView.swift */; };
+		C0112DA5634CD0BB3582B9E6 /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505582090CB50777E2C0AB1C /* PushRegistration.swift */; };
 		CDA2EA9570259DF9415984F6 /* RemoteImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC56BA09285FE88D0A5214FB /* RemoteImage.swift */; };
 		CEFCEFEE2A94543CA849C290 /* NotificationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F6F4D20D8AFD28D06A10F3C /* NotificationsView.swift */; };
 		D982779B2992726D72956BFA /* ReportsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64BD4858F5591A854DC2F48D /* ReportsView.swift */; };
@@ -67,6 +68,7 @@
 		448421EE4B2378EA5003DB6A /* AddMediaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMediaView.swift; sourceTree = "<group>"; };
 		44A3DE2B68F00B369A49847D /* CommentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentsSection.swift; sourceTree = "<group>"; };
 		44C3D8B5115A447DC598B07D /* MediaDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDetailView.swift; sourceTree = "<group>"; };
+		505582090CB50777E2C0AB1C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		59D0202E8E7C8C21EFF49D07 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		64BD4858F5591A854DC2F48D /* ReportsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportsView.swift; sourceTree = "<group>"; };
 		75FBB99DDA73A3F03DFE184D /* TokenHolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenHolder.swift; sourceTree = "<group>"; };
@@ -276,6 +278,7 @@
 				A535588DDD886954477C81E2 /* MediaStorage.swift */,
 				29EEC7EAF5B7552034E4FEDE /* MediaUploadService.swift */,
 				DE837F63DAAB152B3B34B51A /* NotificationService.swift */,
+				505582090CB50777E2C0AB1C /* PushRegistration.swift */,
 				21D9BA82016591234B2C5A97 /* ReportService.swift */,
 				75FBB99DDA73A3F03DFE184D /* TokenHolder.swift */,
 				2D70991C6CAF3A7EFC907312 /* VideoThumbnailGenerator.swift */,
@@ -385,6 +388,7 @@
 				F79C98A9EDD5FDC344667A5E /* NotificationService.swift in Sources */,
 				CEFCEFEE2A94543CA849C290 /* NotificationsView.swift in Sources */,
 				F43A3713ED6C076151F4A2E6 /* ProfileView.swift in Sources */,
+				C0112DA5634CD0BB3582B9E6 /* PushRegistration.swift in Sources */,
 				CDA2EA9570259DF9415984F6 /* RemoteImage.swift in Sources */,
 				EEB622FFEBC8EBEFDFFA1BB0 /* ReportService.swift in Sources */,
 				2DBF86295AF510F8EEACD129 /* ReportSheet.swift in Sources */,

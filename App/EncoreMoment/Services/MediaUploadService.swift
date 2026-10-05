@@ -21,7 +21,8 @@ struct MediaUploadService {
         fileExtension: String,
         kind: MediaKind,
         to eventID: UUID,
-        thumbnailData: Data? = nil
+        thumbnailData: Data? = nil,
+        onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> MediaItem {
         let boundary = "Boundary-\(UUID().uuidString)"
         var request = URLRequest(url: baseURL.appendingPathComponent("events/\(eventID.uuidString)/uploads"))
@@ -30,7 +31,7 @@ struct MediaUploadService {
         if let token = tokenProvider() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        request.httpBody = multipartBody(
+        let body = multipartBody(
             boundary: boundary,
             data: data,
             fileExtension: fileExtension,
@@ -38,7 +39,17 @@ struct MediaUploadService {
             thumbnailData: thumbnailData
         )
 
-        let (responseData, response) = try await URLSession.shared.data(for: request)
+        let responseData: Data
+        let response: URLResponse
+        if let onProgress {
+            // Upload task + delegate so the UI can show real progress.
+            let delegate = UploadProgressDelegate(onProgress: onProgress)
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            (responseData, response) = try await session.upload(for: request, from: body)
+        } else {
+            (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+        }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw uploadError(response: response, data: responseData)
         }
@@ -131,6 +142,26 @@ struct MediaUploadService {
     private func mimeType(for fileExtension: String, kind: MediaKind) -> String {
         UTType(filenameExtension: fileExtension)?.preferredMIMEType
             ?? (kind == .video ? "video/mp4" : "image/jpeg")
+    }
+}
+
+/// Reports upload body bytes to the caller as a 0–1 fraction.
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    let onProgress: @Sendable (Double) -> Void
+
+    init(onProgress: @escaping @Sendable (Double) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        onProgress(min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend)))
     }
 }
 

@@ -17,3 +17,7 @@ extension AppNotification: Content {}
 extension EventMember: Content {}
 extension EventMembershipResponse: Content {}
 extension EventInviteRequest: Content {}
+extension EventLikeSummaries: Content {}
+extension EventInviteLink: Content {}
+extension InviteLinkCreateRequest: Content {}
+extension InviteLinkPreview: Content {}

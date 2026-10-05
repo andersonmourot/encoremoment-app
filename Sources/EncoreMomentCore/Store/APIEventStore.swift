@@ -62,7 +62,15 @@ public actor APIEventStore: EventStore {
     // MARK: Events
 
     public func publishedEvents() async throws -> [Event] {
-        try await get("events", query: [URLQueryItem(name: "published", value: "true")])
+        try await publishedEventsPage(limit: 500, offset: 0)
+    }
+
+    public func publishedEventsPage(limit: Int, offset: Int) async throws -> [Event] {
+        try await get("events", query: [
+            URLQueryItem(name: "published", value: "true"),
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ])
     }
 
     public func events(forCreator creatorId: UUID) async throws -> [Event] {
@@ -121,6 +129,30 @@ public actor APIEventStore: EventStore {
     public func removeMember(creatorID: UUID, from eventID: UUID) async throws -> [EventMember] {
         var request = URLRequest(url: url("events/\(eventID.uuidString)/members/\(creatorID.uuidString)", query: []))
         request.httpMethod = "DELETE"
+        let (data, http) = try await transport.send(request)
+        try Self.validate(http)
+        return try decode(data)
+    }
+
+    // MARK: Invite links
+
+    public func createInviteLink(role: EventMemberRole, for eventID: UUID) async throws -> EventInviteLink {
+        var request = URLRequest(url: url("events/\(eventID.uuidString)/invite-links", query: []))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(InviteLinkCreateRequest(role: role))
+        let (data, http) = try await transport.send(request)
+        try Self.validate(http)
+        return try decode(data)
+    }
+
+    public func inviteLinkPreview(code: String) async throws -> InviteLinkPreview {
+        try await get("invites/\(code)")
+    }
+
+    public func redeemInviteLink(code: String) async throws -> Event {
+        var request = URLRequest(url: url("invites/\(code)/redeem", query: []))
+        request.httpMethod = "POST"
         let (data, http) = try await transport.send(request)
         try Self.validate(http)
         return try decode(data)

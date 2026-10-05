@@ -68,3 +68,44 @@ public struct EventInviteRequest: Codable, Sendable, Equatable {
         self.role = role
     }
 }
+
+/// A shareable invite link for an event — anyone signed in who redeems the
+/// code joins with the link's role. Created by the event owner.
+public struct EventInviteLink: Identifiable, Codable, Sendable, Equatable {
+    /// Random URL-safe code embedded in the link.
+    public let code: String
+    public let eventID: UUID
+    public let role: EventMemberRole
+    public let createdAt: Date
+
+    public var id: String { code }
+
+    public init(code: String, eventID: UUID, role: EventMemberRole, createdAt: Date = Date()) {
+        self.code = code
+        self.eventID = eventID
+        self.role = role
+        self.createdAt = createdAt
+    }
+}
+
+/// Body for `POST /events/{id}/invite-links`.
+public struct InviteLinkCreateRequest: Codable, Sendable, Equatable {
+    public var role: EventMemberRole
+
+    public init(role: EventMemberRole) {
+        self.role = role
+    }
+}
+
+/// Public details of an invite link, shown before the recipient redeems it.
+public struct InviteLinkPreview: Codable, Sendable, Equatable {
+    public let eventID: UUID
+    public let eventTitle: String
+    public let role: EventMemberRole
+
+    public init(eventID: UUID, eventTitle: String, role: EventMemberRole) {
+        self.eventID = eventID
+        self.eventTitle = eventTitle
+        self.role = role
+    }
+}

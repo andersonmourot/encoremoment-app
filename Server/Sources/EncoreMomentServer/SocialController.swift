@@ -15,6 +15,8 @@ struct SocialController: RouteCollection {
         events.grouped(UserToken.authenticator()).get(":id", "media", ":mediaId", "likes", use: mediaLikeSummary)
         // Optional auth: anonymous callers get likedByViewer == false.
         events.grouped(UserToken.authenticator()).get(":id", "likes", use: likeSummary)
+        // Batch: every like summary on the event in one request.
+        events.grouped(UserToken.authenticator()).get(":id", "likes", "all", use: likeSummaries)
 
         // Authenticated writes.
         let protected = events.grouped(UserToken.authenticator(), UserToken.guardMiddleware())
@@ -100,6 +102,43 @@ struct SocialController: RouteCollection {
         _ = try await requireViewableEvent(eventId, req)
         let viewerId = req.auth.get(UserToken.self)?.userId
         return try await Self.summary(eventId: eventId, viewerId: viewerId, on: req.db)
+    }
+
+    /// One request for the event like summary plus every media and comment
+    /// like summary — replaces the per-item fan-out on the event page.
+    func likeSummaries(req: Request) async throws -> EventLikeSummaries {
+        let eventId = try id(req)
+        _ = try await requireViewableEvent(eventId, req)
+        let viewerId = req.auth.get(UserToken.self)?.userId
+
+        let eventSummary = try await Self.summary(eventId: eventId, viewerId: viewerId, on: req.db)
+
+        let mediaIDs = try await MediaModel.query(on: req.db)
+            .filter(\.$event.$id == eventId).all().compactMap(\.id)
+        let commentIDs = try await CommentModel.query(on: req.db)
+            .filter(\.$eventId == eventId).all().compactMap(\.id)
+
+        let mediaLikes = mediaIDs.isEmpty ? [] : try await MediaLikeModel.query(on: req.db)
+            .filter(\.$mediaId ~~ mediaIDs).all()
+        let commentLikes = commentIDs.isEmpty ? [] : try await CommentLikeModel.query(on: req.db)
+            .filter(\.$commentId ~~ commentIDs).all()
+
+        let mediaByID = Dictionary(grouping: mediaLikes, by: \.mediaId)
+        let commentByID = Dictionary(grouping: commentLikes, by: \.commentId)
+
+        return EventLikeSummaries(
+            event: eventSummary,
+            media: mediaIDs.map { id in
+                let likes = mediaByID[id] ?? []
+                return LikeSummary(eventID: id, count: likes.count,
+                                   likedByViewer: viewerId.map { v in likes.contains { $0.userId == v } } ?? false)
+            },
+            comments: commentIDs.map { id in
+                let likes = commentByID[id] ?? []
+                return LikeSummary(eventID: id, count: likes.count,
+                                   likedByViewer: viewerId.map { v in likes.contains { $0.userId == v } } ?? false)
+            }
+        )
     }
 
     func like(req: Request) async throws -> LikeSummary {

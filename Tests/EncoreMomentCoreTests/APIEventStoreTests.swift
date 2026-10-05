@@ -41,7 +41,7 @@ final class APIEventStoreTests: XCTestCase {
         let req = transport.requests.first!
         XCTAssertEqual(req.httpMethod, "GET")
         XCTAssertEqual(req.url?.path, "/v1/events")
-        XCTAssertEqual(req.url?.query, "published=true")
+        XCTAssertEqual(req.url?.query, "published=true&limit=500&offset=0")
     }
 
     func testEventsForCreatorQuery() async throws {

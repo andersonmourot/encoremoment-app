@@ -8,6 +8,8 @@ import Foundation
 public enum DeepLink: Equatable, Sendable {
     case event(UUID)
     case creator(UUID)
+    /// An event invite link; the payload is the link's code, not an event id.
+    case invite(String)
 
     public static let scheme = "encoremoment"
     public static let webHost = "encoremoment.app"
@@ -23,6 +25,9 @@ public enum DeepLink: Equatable, Sendable {
         case .creator(let id):
             components.host = "creator"
             components.path = "/\(id.uuidString)"
+        case .invite(let code):
+            components.host = "invite"
+            components.path = "/\(code)"
         }
         return components.url!
     }
@@ -35,6 +40,7 @@ public enum DeepLink: Equatable, Sendable {
         switch self {
         case .event(let id): components.path = "/event/\(id.uuidString)"
         case .creator(let id): components.path = "/creator/\(id.uuidString)"
+        case .invite(let code): components.path = "/invite/\(code)"
         }
         return components.url!
     }
@@ -62,6 +68,10 @@ public enum DeepLink: Equatable, Sendable {
             return nil
         }
 
+        if kind == "invite" {
+            self = .invite(idString)
+            return
+        }
         guard let uuid = UUID(uuidString: idString) else { return nil }
         switch kind {
         case "event": self = .event(uuid)

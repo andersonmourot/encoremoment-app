@@ -103,21 +103,7 @@ struct EventDetailView: View {
                 Divider()
 
                 if canUploadMedia {
-                    Button {
-                        if model.isAccountSignedIn {
-                            showingMediaPicker = true
-                        } else {
-                            showingAuth = true
-                        }
-                    } label: {
-                        Label(
-                            isImportingMedia ? "Adding media..." : "Add your photos or videos",
-                            systemImage: "photo.badge.plus"
-                        )
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isImportingMedia)
+                    uploadSection
                 }
 
                 if liveEvent.media.isEmpty {
@@ -144,11 +130,12 @@ struct EventDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: liveEvent.id) {
             await model.recordView(liveEvent.id)
-            likeSummary = await model.likeSummary(forEvent: liveEvent.id)
+            let summaries = await model.likeSummaries(forEvent: liveEvent.id)
+            likeSummary = summaries.event
+            mediaLikes = summaries.mediaByID
             if model.isAccountSignedIn {
                 membership = await model.myMembership(in: liveEvent.id)
             }
-            await loadMediaLikes()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -250,9 +237,43 @@ struct EventDetailView: View {
                 MediaGridView(
                     media: media,
                     onTap: { selectedMedia = $0 },
+                    likeSummary: { mediaLikes[$0.id] },
+                    onToggleLike: model.isAccountSignedIn ? { toggleMediaLike($0) } : nil,
                     canDelete: { model.canDeleteMedia($0, in: liveEvent) },
                     onDelete: { mediaPendingRemoval = $0 }
                 )
+            }
+        }
+    }
+
+    /// "Add media" button plus a live progress bar while files upload.
+    private var uploadSection: some View {
+        VStack(spacing: 8) {
+            Button {
+                if model.isAccountSignedIn {
+                    showingMediaPicker = true
+                } else {
+                    showingAuth = true
+                }
+            } label: {
+                Label(
+                    isImportingMedia ? "Adding media..." : "Add your photos or videos",
+                    systemImage: "photo.badge.plus"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isImportingMedia)
+
+            if isImportingMedia {
+                ProgressView(value: model.uploadProgress)
+                    .progressViewStyle(.linear)
+                    .padding(.horizontal, 4)
+                if let progress = model.uploadProgress {
+                    Text("Uploading… \(Int(progress * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -282,12 +303,17 @@ struct EventDetailView: View {
         }
     }
 
-    private func loadMediaLikes() async {
-        var summaries: [UUID: LikeSummary] = [:]
-        for item in liveEvent.media {
-            summaries[item.id] = await model.mediaLikeSummary(mediaID: item.id, eventID: liveEvent.id)
+    private func toggleMediaLike(_ item: MediaItem) {
+        let summary = mediaLikes[item.id] ?? LikeSummary(eventID: item.id)
+        Task {
+            if let updated = await model.setMediaLike(
+                mediaID: item.id,
+                eventID: liveEvent.id,
+                !summary.likedByViewer
+            ) {
+                mediaLikes[item.id] = updated
+            }
         }
-        mediaLikes = summaries
     }
 
     private func removePendingMedia() {
