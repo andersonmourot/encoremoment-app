@@ -33,8 +33,6 @@ struct FollowingFeedView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabHeader("Following")
-
                 Picker("Feed", selection: $rail) {
                     Text("Moments").tag(Rail.moments)
                     Text("Events").tag(Rail.events)
@@ -76,7 +74,8 @@ struct FollowingFeedView: View {
             MomentsGridView(
                 items: momentResults,
                 hasMore: model.hasMoreFollowedMoments,
-                loadMore: { await model.loadMoreFollowedMoments() }
+                loadMore: { await model.loadMoreFollowedMoments() },
+                headerTitle: "Following"
             )
         }
     }
@@ -92,6 +91,8 @@ struct FollowingFeedView: View {
         ) {
             ScrollView {
                 LazyVStack(spacing: 16) {
+                    TabHeader("Following")
+                        .padding(.horizontal, -16)
                     ForEach(results) { event in
                         FollowingEventRow(event: event, creator: model.creator(id: event.creatorId))
                             .contentShape(Rectangle())

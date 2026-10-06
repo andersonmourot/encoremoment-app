@@ -20,7 +20,7 @@ struct ProfileView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            List {
                 TabHeader("Profile") {
                     Button {
                         showingNotifications = true
@@ -43,8 +43,9 @@ struct ProfileView: View {
                     }
                     .accessibilityLabel("Settings")
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
 
-                List {
                 if let creator = model.currentCreator {
                     Section {
                         CreatorHeader(
@@ -109,7 +110,6 @@ struct ProfileView: View {
                     likedMediaSection
                 }
 
-                }
             }
             .navigationTitle("Profile")
             .toolbar(.hidden, for: .navigationBar)

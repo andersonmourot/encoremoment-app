@@ -35,10 +35,11 @@ struct SearchView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            VStack(spacing: 0) {
+            List {
                 TabHeader("Search")
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
 
-                List {
                 if !creatorResults.isEmpty {
                     Section(trimmedQuery.isEmpty ? "Suggested Creators" : "Creators") {
                         ForEach(creatorResults) { creator in
@@ -65,7 +66,6 @@ struct SearchView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                }
                 }
             }
             .navigationTitle("Search")

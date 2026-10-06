@@ -23,8 +23,6 @@ struct DiscoverView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabHeader("In The Moment")
-
                 Picker("Feed", selection: $rail) {
                     Text("Moments").tag(Rail.moments)
                     Text("Events").tag(Rail.events)
@@ -64,7 +62,8 @@ struct DiscoverView: View {
             MomentsGridView(
                 items: momentResults,
                 hasMore: model.hasMoreMoments,
-                loadMore: { await model.loadMoreMoments() }
+                loadMore: { await model.loadMoreMoments() },
+                headerTitle: "In The Moment"
             )
         }
     }
@@ -80,6 +79,8 @@ struct DiscoverView: View {
         ) {
             ScrollView {
                 LazyVStack(spacing: 16) {
+                    TabHeader("In The Moment")
+                        .padding(.horizontal, -16)
                     ForEach(results) { event in
                         EventRow(event: event, creator: model.creator(id: event.creatorId))
                             .contentShape(Rectangle())

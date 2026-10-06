@@ -9,6 +9,9 @@ struct MomentsGridView: View {
     let items: [MediaFeedItem]
     var hasMore = false
     var loadMore: (() async -> Void)? = nil
+    /// Optional tab title rendered at the top of the feed — it scrolls away
+    /// with the posts.
+    var headerTitle: String? = nil
 
     @EnvironmentObject private var model: AppModel
     @State private var selected: MediaFeedItem?
@@ -16,6 +19,9 @@ struct MomentsGridView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
+                if let headerTitle {
+                    TabHeader(headerTitle)
+                }
                 ForEach(items) { feedItem in
                     MomentCard(item: feedItem)
                         .contentShape(Rectangle())
