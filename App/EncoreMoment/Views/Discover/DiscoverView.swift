@@ -38,7 +38,6 @@ struct DiscoverView: View {
                 }
             }
             .navigationTitle("In The Moment")
-            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)

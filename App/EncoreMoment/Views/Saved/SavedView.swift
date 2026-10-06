@@ -49,7 +49,6 @@ struct SavedView: View {
                 }
             }
             .navigationTitle("Saved")
-            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)
