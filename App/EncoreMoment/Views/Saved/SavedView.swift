@@ -8,7 +8,10 @@ struct SavedView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                TabHeader("Saved")
+
+                Group {
                 let favorites = model.favoriteEvents
                 AsyncContentView(
                     isLoading: model.isLoading,
@@ -18,9 +21,6 @@ struct SavedView: View {
                     retry: { await model.refresh() }
                 ) {
                     List {
-                        TabHeader("Saved")
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
                         if !model.isAccountSignedIn {
                             Section {
                                 Button {
@@ -49,6 +49,7 @@ struct SavedView: View {
                         systemImage: "heart",
                         message: "Tap the heart on an event to save it here."
                     )
+                }
                 }
             }
             .navigationTitle("Saved")
