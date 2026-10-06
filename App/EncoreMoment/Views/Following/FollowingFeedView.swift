@@ -49,11 +49,6 @@ struct FollowingFeedView: View {
             }
             .navigationTitle("Following")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("Following").font(.title2.weight(.bold))
-                }
-            }
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)
