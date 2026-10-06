@@ -89,6 +89,9 @@ struct ProfileView: View {
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Profile").font(.title2.weight(.bold))
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingNotifications = true
