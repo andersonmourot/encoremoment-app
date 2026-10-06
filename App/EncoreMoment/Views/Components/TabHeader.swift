@@ -31,9 +31,8 @@ extension TabHeader where Actions == EmptyView {
     }
 }
 
-/// Pinned tab header that collapses from the 28pt title row into a slim
-/// centered title once the content beneath it scrolls — mirroring the
-/// system large-title behavior.
+/// Tab header that scrolls away entirely once the content beneath it
+/// scrolls — no slim title bar, the feed takes the full height.
 struct CollapsingTabHeader<Actions: View>: View {
     let title: String
     let collapsed: Bool
@@ -47,21 +46,9 @@ struct CollapsingTabHeader<Actions: View>: View {
 
     var body: some View {
         Group {
-            if collapsed {
-                ZStack {
-                    Text(title)
-                        .font(.headline)
-                    HStack {
-                        Spacer()
-                        actions
-                    }
-                    .padding(.trailing, 16)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .padding(.vertical, 4)
-            } else {
+            if !collapsed {
                 TabHeader(title) { actions }
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.15), value: collapsed)
