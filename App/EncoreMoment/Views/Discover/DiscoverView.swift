@@ -23,6 +23,8 @@ struct DiscoverView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
+                TabHeader("In The Moment")
+
                 Picker("Feed", selection: $rail) {
                     Text("Moments").tag(Rail.moments)
                     Text("Events").tag(Rail.events)
@@ -38,6 +40,7 @@ struct DiscoverView: View {
                 }
             }
             .navigationTitle("In The Moment")
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)

@@ -25,6 +25,7 @@
 		59F05002C52A66E3B44E84B3 /* DefaultAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7347B58F9FA3B2E22E480A1E /* DefaultAvatarView.swift */; };
 		6652CC5BC7193D4E1A641246 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10960571DED468950FAE0944 /* Theme.swift */; };
 		666BC2E51C15AEB34B572538 /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C3D8B5115A447DC598B07D /* MediaDetailView.swift */; };
+		679C14E6FEB9F7EC03959DDB /* TabHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F497C064DD56CDDBE547506 /* TabHeader.swift */; };
 		6862E2E0B5E84EBD2F0B59A1 /* AddMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 448421EE4B2378EA5003DB6A /* AddMediaView.swift */; };
 		6B368468C4027AA36342F68D /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = A939CECF5804A9B7E390DCB0 /* Keychain.swift */; };
 		6B668F8E21CD33D7578F820B /* ManageMediaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AEA966CF8B3DA446C2ACAFD /* ManageMediaView.swift */; };
@@ -80,6 +81,7 @@
 		88C3EC3377CFC73AD941C695 /* MediaGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGridView.swift; sourceTree = "<group>"; };
 		8BE4E3535BED1B7E5A3B5214 /* FollowingFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingFeedView.swift; sourceTree = "<group>"; };
 		8E7D56F75675EB0CAC71135E /* CreatorProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatorProfileView.swift; sourceTree = "<group>"; };
+		8F497C064DD56CDDBE547506 /* TabHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabHeader.swift; sourceTree = "<group>"; };
 		8F576FF0B34C2A4A367BFB39 /* ReportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportSheet.swift; sourceTree = "<group>"; };
 		90F92A4DA1EE005D6501C690 /* MediaDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDownloader.swift; sourceTree = "<group>"; };
 		94F2728BA8169A3AA5693E6F /* inthemoment-app */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "inthemoment-app"; path = .; sourceTree = SOURCE_ROOT; };
@@ -258,6 +260,7 @@
 				BC56BA09285FE88D0A5214FB /* RemoteImage.swift */,
 				8F576FF0B34C2A4A367BFB39 /* ReportSheet.swift */,
 				D447338DB4E7E993FB700CD0 /* StateViews.swift */,
+				8F497C064DD56CDDBE547506 /* TabHeader.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -408,6 +411,7 @@
 				503DBD8905F67FC98C18F68A /* SavedView.swift in Sources */,
 				7BD1B72FD4B4443D9DDC1E17 /* SearchView.swift in Sources */,
 				183DF77575BCDC787B9F9703 /* StateViews.swift in Sources */,
+				679C14E6FEB9F7EC03959DDB /* TabHeader.swift in Sources */,
 				14376149156CC1C2096ECEEB /* TermsView.swift in Sources */,
 				6652CC5BC7193D4E1A641246 /* Theme.swift in Sources */,
 				565F7195FDED3FBDD9A3B5B2 /* TokenHolder.swift in Sources */,

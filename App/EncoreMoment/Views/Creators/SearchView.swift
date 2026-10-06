@@ -35,7 +35,10 @@ struct SearchView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
+            VStack(spacing: 0) {
+                TabHeader("Search")
+
+                List {
                 if !creatorResults.isEmpty {
                     Section(trimmedQuery.isEmpty ? "Suggested Creators" : "Creators") {
                         ForEach(creatorResults) { creator in
@@ -63,8 +66,10 @@ struct SearchView: View {
                         }
                     }
                 }
+                }
             }
             .navigationTitle("Search")
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)

@@ -8,7 +8,10 @@ struct SavedView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                TabHeader("Saved")
+
+                Group {
                 let favorites = model.favoriteEvents
                 AsyncContentView(
                     isLoading: model.isLoading,
@@ -47,8 +50,10 @@ struct SavedView: View {
                         message: "Tap the heart on an event to save it here."
                     )
                 }
+                }
             }
             .navigationTitle("Saved")
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
                     EventDetailView(event: event)
