@@ -38,13 +38,16 @@ struct FollowingFeedView: View {
             VStack(spacing: 0) {
                 CollapsingTabHeader("Following", collapsed: headerCollapsed)
 
-                Picker("Feed", selection: $rail) {
-                    Text("Moments").tag(Rail.moments)
-                    Text("Events").tag(Rail.events)
+                if !headerCollapsed {
+                    Picker("Feed", selection: $rail) {
+                        Text("Moments").tag(Rail.moments)
+                        Text("Events").tag(Rail.events)
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
 
                 if rail == .moments {
                     momentsContent
@@ -52,6 +55,7 @@ struct FollowingFeedView: View {
                     eventsContent
                 }
             }
+            .animation(.easeInOut(duration: 0.2), value: headerCollapsed)
             .onChange(of: rail) { scrollOffset = 0 }
             .navigationTitle("Following")
             .toolbar(.hidden, for: .navigationBar)
