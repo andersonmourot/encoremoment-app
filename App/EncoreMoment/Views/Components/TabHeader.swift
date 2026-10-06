@@ -74,33 +74,15 @@ extension CollapsingTabHeader where Actions == EmptyView {
     }
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/// Zero-height marker placed at the top of scrollable content. Pair with
-/// `trackScrollOffset(_:)` on the containing scroll view to read how far
-/// the content has scrolled.
-struct ScrollSentinel: View {
-    var body: some View {
-        GeometryReader { geo in
-            Color.clear.preference(
-                key: ScrollOffsetKey.self,
-                value: geo.frame(in: .named("tabScroll")).minY
-            )
-        }
-        .frame(height: 0)
-    }
-}
-
 extension View {
-    /// Reports the scroll offset of this scroll view to `binding`. Requires a
-    /// `ScrollSentinel` at the top of the scrolled content.
+    /// Reports how far this scroll view's content has scrolled past its
+    /// resting top offset to `binding` — 0 at rest, positive when scrolled.
+    /// Works on ScrollView and List.
     func trackScrollOffset(_ binding: Binding<CGFloat>) -> some View {
-        coordinateSpace(name: "tabScroll")
-            .onPreferenceChange(ScrollOffsetKey.self) { binding.wrappedValue = $0 }
+        onScrollGeometryChange(for: CGFloat.self) { geo in
+            geo.contentOffset.y + geo.contentInsets.top
+        } action: { _, new in
+            binding.wrappedValue = new
+        }
     }
 }

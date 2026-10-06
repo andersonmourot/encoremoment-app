@@ -19,7 +19,7 @@ struct ProfileView: View {
     @State private var selectedLikedMedia: MediaItem?
     @State private var scrollOffset: CGFloat = 0
 
-    private var headerCollapsed: Bool { scrollOffset < -24 }
+    private var headerCollapsed: Bool { scrollOffset > 24 }
 
     var body: some View {
         NavigationStack {
@@ -48,9 +48,6 @@ struct ProfileView: View {
                 }
 
                 List {
-                ScrollSentinel()
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
                 if let creator = model.currentCreator {
                     Section {
                         CreatorHeader(

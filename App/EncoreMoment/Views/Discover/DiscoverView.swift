@@ -9,7 +9,7 @@ struct DiscoverView: View {
     @State private var rail: Rail = .moments
     @State private var scrollOffset: CGFloat = 0
 
-    private var headerCollapsed: Bool { scrollOffset < -24 }
+    private var headerCollapsed: Bool { scrollOffset > 24 }
 
     private enum Rail {
         case moments, events
@@ -85,7 +85,6 @@ struct DiscoverView: View {
         ) {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    ScrollSentinel()
                     ForEach(results) { event in
                         EventRow(event: event, creator: model.creator(id: event.creatorId))
                             .contentShape(Rectangle())

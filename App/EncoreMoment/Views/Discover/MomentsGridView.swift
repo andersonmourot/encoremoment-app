@@ -17,7 +17,6 @@ struct MomentsGridView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ScrollSentinel()
                 ForEach(items) { feedItem in
                     MomentCard(item: feedItem)
                         .contentShape(Rectangle())

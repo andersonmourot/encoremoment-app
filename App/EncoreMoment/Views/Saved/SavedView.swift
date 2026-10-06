@@ -7,7 +7,7 @@ struct SavedView: View {
     @State private var showingAuth = false
     @State private var scrollOffset: CGFloat = 0
 
-    private var headerCollapsed: Bool { scrollOffset < -24 }
+    private var headerCollapsed: Bool { scrollOffset > 24 }
 
     var body: some View {
         NavigationStack {
@@ -24,9 +24,6 @@ struct SavedView: View {
                     retry: { await model.refresh() }
                 ) {
                     List {
-                        ScrollSentinel()
-                            .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
                         if !model.isAccountSignedIn {
                             Section {
                                 Button {

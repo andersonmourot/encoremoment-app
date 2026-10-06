@@ -9,7 +9,7 @@ struct SearchView: View {
     @State private var path: [UUID] = []
     @State private var scrollOffset: CGFloat = 0
 
-    private var headerCollapsed: Bool { scrollOffset < -24 }
+    private var headerCollapsed: Bool { scrollOffset > 24 }
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,9 +42,6 @@ struct SearchView: View {
                 CollapsingTabHeader("Search", collapsed: headerCollapsed)
 
                 List {
-                ScrollSentinel()
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
                 if !creatorResults.isEmpty {
                     Section(trimmedQuery.isEmpty ? "Suggested Creators" : "Creators") {
                         ForEach(creatorResults) { creator in
