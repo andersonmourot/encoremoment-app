@@ -1,5 +1,6 @@
 import Fluent
 import Foundation
+import SQLKit
 import EncoreMomentCore
 
 /// A text comment on an event. `author_name` is denormalized at creation time so
@@ -158,4 +159,36 @@ struct CreateMediaLike: AsyncMigration {
     func revert(on database: Database) async throws {
         try await database.schema(MediaLikeModel.schema).delete()
     }
+}
+
+/// The like tables' UNIQUE constraints were declared after production tables
+/// already existed, so databases migrated earlier never got them. This
+/// removes pre-constraint duplicates and creates covering unique indexes —
+/// `IF NOT EXISTS` makes it a no-op where the constraints already apply.
+struct DedupeAndIndexLikes: AsyncMigration {
+    var name: String { "DedupeAndIndexLikes" }
+
+    func prepare(on database: Database) async throws {
+        guard let sql = database as? any SQLDatabase else { return }
+        let tables: [(table: String, column: String)] = [
+            ("event_likes", "event_id"),
+            ("comment_likes", "comment_id"),
+            ("media_likes", "media_id"),
+        ]
+        for (table, column) in tables {
+            try await sql.raw("""
+                DELETE FROM \(unsafeRaw: table)
+                WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM \(unsafeRaw: table)
+                    GROUP BY \(unsafeRaw: column), user_id
+                )
+                """).run()
+            try await sql.raw("""
+                CREATE UNIQUE INDEX IF NOT EXISTS \(unsafeRaw: "idx_\(table)_unique")
+                ON \(unsafeRaw: table) (\(unsafeRaw: column), user_id)
+                """).run()
+        }
+    }
+
+    func revert(on database: Database) async throws {}
 }

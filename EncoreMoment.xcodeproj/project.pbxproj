@@ -18,6 +18,7 @@
 		35F955A70C3FF99AD0B0CAD3 /* FollowingFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE4E3535BED1B7E5A3B5214 /* FollowingFeedView.swift */; };
 		380131FF1F53FA6E030141AA /* MediaDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F92A4DA1EE005D6501C690 /* MediaDownloader.swift */; };
 		43790D30353E62D94DFD3EF8 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 389516024B913725FA2016CA /* DiscoverView.swift */; };
+		4549E6323BD0D0921A9FAE92 /* ImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B367AB594167C5204A6B322B /* ImageLoader.swift */; };
 		4EB36370FD97E167CFBEBE87 /* MediaUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EEC7EAF5B7552034E4FEDE /* MediaUploadService.swift */; };
 		5016D00B3F9333E28B729411 /* CreatorEventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FB4F13E7DE8C90FB0DB51B5 /* CreatorEventDetailView.swift */; };
 		503DBD8905F67FC98C18F68A /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A01B5A76F6FAD308C46AFA /* SavedView.swift */; };
@@ -90,6 +91,7 @@
 		A939CECF5804A9B7E390DCB0 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		ADC7496ECC7BA853D7A29B7A /* MediaPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPagerView.swift; sourceTree = "<group>"; };
 		AFF8AAE2C825BC7ED6A015C5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		B367AB594167C5204A6B322B /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
 		B7022405A21D5418BBE519BF /* ContentUnavailableViewCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentUnavailableViewCompat.swift; sourceTree = "<group>"; };
 		BA7E0CC5EFF3DFE7A5DC0A27 /* EncoreMomentApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncoreMomentApp.swift; sourceTree = "<group>"; };
 		BBB6DDB84502A19855D5E0A5 /* AvatarCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarCropView.swift; sourceTree = "<group>"; };
@@ -285,6 +287,7 @@
 			children = (
 				DFB5611A42FE7DB304E035D3 /* AuthService.swift */,
 				355220C3EF4D78DE14CAD2A2 /* EventMediaImporter.swift */,
+				B367AB594167C5204A6B322B /* ImageLoader.swift */,
 				A939CECF5804A9B7E390DCB0 /* Keychain.swift */,
 				90F92A4DA1EE005D6501C690 /* MediaDownloader.swift */,
 				A535588DDD886954477C81E2 /* MediaStorage.swift */,
@@ -389,6 +392,7 @@
 				E6FBFBE1DEFDAFA6AF7B86FF /* EventMediaImporter.swift in Sources */,
 				8631A6BD6ADE5410DEDCA4E9 /* EventMembersView.swift in Sources */,
 				35F955A70C3FF99AD0B0CAD3 /* FollowingFeedView.swift in Sources */,
+				4549E6323BD0D0921A9FAE92 /* ImageLoader.swift in Sources */,
 				6B368468C4027AA36342F68D /* Keychain.swift in Sources */,
 				6B668F8E21CD33D7578F820B /* ManageMediaView.swift in Sources */,
 				666BC2E51C15AEB34B572538 /* MediaDetailView.swift in Sources */,

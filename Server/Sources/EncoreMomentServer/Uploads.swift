@@ -246,6 +246,11 @@ enum UploadStorage {
         if let contentType {
             headers.add(name: "Content-Type", value: contentType)
         }
+        // Object keys are random UUIDs — the bytes at a URL never change, so
+        // clients can cache them forever without revalidating.
+        if method == .PUT {
+            headers.add(name: "Cache-Control", value: "public, max-age=31536000, immutable")
+        }
         return ClientRequest(
             method: method,
             url: URI(string: objectURL.absoluteString),
@@ -359,6 +364,9 @@ struct UploadController: RouteCollection {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             throw Abort(.notFound)
         }
-        return try await req.fileio.asyncStreamFile(at: fileURL.path)
+        let response = try await req.fileio.asyncStreamFile(at: fileURL.path)
+        // UUID filenames are immutable — cache forever.
+        response.headers.add(name: .cacheControl, value: "public, max-age=31536000, immutable")
+        return response
     }
 }

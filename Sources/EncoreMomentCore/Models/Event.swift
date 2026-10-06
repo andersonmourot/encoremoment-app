@@ -25,6 +25,12 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
     /// Total event likes — populated by the API on feed reads so popular-first
     /// ordering and badges can be rendered without extra calls.
     public var likeCount: Int?
+    /// Media counts populated by the API on "lite" list payloads that omit
+    /// `media` — `photoCount`/`videoCount`/`downloadableCount` fall back to
+    /// counting the embedded media array when these are absent.
+    public var serverPhotoCount: Int?
+    public var serverVideoCount: Int?
+    public var serverDownloadableCount: Int?
 
     public init(
         id: UUID = UUID(),
@@ -39,7 +45,10 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         allowsCommunityUploads: Bool = false,
         inviteOnly: Bool = false,
         media: [MediaItem] = [],
-        likeCount: Int? = nil
+        likeCount: Int? = nil,
+        serverPhotoCount: Int? = nil,
+        serverVideoCount: Int? = nil,
+        serverDownloadableCount: Int? = nil
     ) {
         self.id = id
         self.creatorId = creatorId
@@ -54,11 +63,17 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         self.inviteOnly = inviteOnly
         self.media = media
         self.likeCount = likeCount
+        self.serverPhotoCount = serverPhotoCount
+        self.serverVideoCount = serverVideoCount
+        self.serverDownloadableCount = serverDownloadableCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, creatorId, title, details, coverImageURL, location, date, createdAt
         case isPublished, allowsCommunityUploads, inviteOnly, media, likeCount
+        case serverPhotoCount = "photoCount"
+        case serverVideoCount = "videoCount"
+        case serverDownloadableCount = "downloadableCount"
     }
 
     public init(from decoder: Decoder) throws {
@@ -76,6 +91,9 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         inviteOnly = try container.decodeIfPresent(Bool.self, forKey: .inviteOnly) ?? false
         media = try container.decodeIfPresent([MediaItem].self, forKey: .media) ?? []
         likeCount = try container.decodeIfPresent(Int.self, forKey: .likeCount)
+        serverPhotoCount = try container.decodeIfPresent(Int.self, forKey: .serverPhotoCount)
+        serverVideoCount = try container.decodeIfPresent(Int.self, forKey: .serverVideoCount)
+        serverDownloadableCount = try container.decodeIfPresent(Int.self, forKey: .serverDownloadableCount)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -93,13 +111,19 @@ public struct Event: Identifiable, Codable, Hashable, Sendable {
         try container.encode(inviteOnly, forKey: .inviteOnly)
         try container.encode(media, forKey: .media)
         try container.encodeIfPresent(likeCount, forKey: .likeCount)
+        try container.encodeIfPresent(serverPhotoCount, forKey: .serverPhotoCount)
+        try container.encodeIfPresent(serverVideoCount, forKey: .serverVideoCount)
+        try container.encodeIfPresent(serverDownloadableCount, forKey: .serverDownloadableCount)
     }
 
-    public var photoCount: Int { media.lazy.filter { $0.kind == .photo }.count }
-    public var videoCount: Int { media.lazy.filter { $0.kind == .video }.count }
-    public var mediaCount: Int { media.count }
+    public var photoCount: Int { serverPhotoCount ?? media.lazy.filter { $0.kind == .photo }.count }
+    public var videoCount: Int { serverVideoCount ?? media.lazy.filter { $0.kind == .video }.count }
+    public var mediaCount: Int {
+        guard media.isEmpty, serverPhotoCount != nil || serverVideoCount != nil else { return media.count }
+        return (serverPhotoCount ?? 0) + (serverVideoCount ?? 0)
+    }
     /// Number of media items the creator allows fans to download.
-    public var downloadableCount: Int { media.lazy.filter(\.isDownloadable).count }
+    public var downloadableCount: Int { serverDownloadableCount ?? media.lazy.filter(\.isDownloadable).count }
 
     /// Cover image to display, falling back to the first media preview when no cover is set.
     public var displayCoverURL: URL? { coverImageURL ?? media.first?.previewURL }

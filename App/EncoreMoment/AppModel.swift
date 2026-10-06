@@ -9,8 +9,17 @@ import EncoreMomentCore
 /// swapping ``InMemoryEventStore`` for a networked store later is a one-line change.
 @MainActor
 final class AppModel: ObservableObject {
-    @Published private(set) var events: [Event] = []
-    @Published private(set) var creators: [Creator] = []
+    @Published private(set) var events: [Event] = [] {
+        didSet { eventIndex = Dictionary(events.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
+    }
+    /// Fully-loaded events (with media) keyed by id — list payloads are "lite"
+    /// (no media array), so detail views fetch and cache the full event here.
+    @Published private(set) var fullEvents: [UUID: Event] = [:]
+    @Published private(set) var creators: [Creator] = [] {
+        didSet { creatorIndex = Dictionary(creators.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
+    }
+    private var eventIndex: [UUID: Event] = [:]
+    private var creatorIndex: [UUID: Creator] = [:]
     /// Events owned by the current creator, including unpublished drafts.
     @Published private(set) var myEventsList: [Event] = []
     @Published private(set) var isLoading = false
@@ -187,24 +196,36 @@ final class AppModel: ObservableObject {
             self.followedMoments = followedPage.filter { !fanPrefs.isBlocked($0.creatorID) }
             self.hasMoreFollowedMoments = followedPage.count == Self.momentsPageSize
             self.topCreators = ((try? await top) ?? []).filter { !fanPrefs.isBlocked($0.id) }
-            self.likedMediaItems = isAccountSignedIn
+
+            // The remaining loads are independent — run them in parallel.
+            let creatorId = currentCreator?.id
+            async let likedTask = isAccountSignedIn
                 ? ((try? await socialStore.likedMedia()) ?? [])
                 : []
+            async let remoteBlocked = (try? await fanStore.blockedCreators()) ?? []
+            async let mineTask: [Event] = creatorId == nil
+                ? []
+                : ((try? await store.events(forCreator: creatorId!)) ?? [])
+            async let statsTask = creatorId == nil
+                ? []
+                : ((try? await analyticsStore.creatorStats()) ?? [])
+            async let notificationsTask = isAccountSignedIn
+                ? ((try? await notificationService.notifications()) ?? [])
+                : []
+
+            self.likedMediaItems = await likedTask
             // Signed-in users get blocked profiles from /me/blocks (the server
             // filters them out of /creators); anonymous users derive them here.
             let derived = allCreators.filter { fanPrefs.isBlocked($0.id) }
-            let remote = (try? await fanStore.blockedCreators()) ?? []
+            let remote = await remoteBlocked
             self.blockedCreators = derived + remote.filter { r in !derived.contains(where: { $0.id == r.id }) }
-            if let creator = currentCreator {
-                self.myEventsList = try await store.events(forCreator: creator.id)
-            } else {
-                self.myEventsList = []
-            }
+            self.myEventsList = await mineTask
+            statsByEvent = Dictionary((await statsTask).map { ($0.eventID, $0) }, uniquingKeysWith: { a, _ in a })
+            notifications = await notificationsTask
         } catch {
             loadError = error.localizedDescription
         }
-        await loadCreatorStats()
-        await loadNotifications()
+        await refreshFullEvents()
     }
 
     /// Appends the next page of the public feed. Called when the user scrolls
@@ -215,8 +236,8 @@ final class AppModel: ObservableObject {
             limit: Self.feedPageSize, offset: events.count,
             followingOnly: false, popular: true
         ) else { return }
-        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorId) }
-            .filter { incoming in !events.contains { $0.id == incoming.id } }
+        let seen = Set(events.map(\.id))
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorId) && !seen.contains($0.id) }
         events.append(contentsOf: fresh)
         hasMoreEvents = page.count == Self.feedPageSize
     }
@@ -227,8 +248,8 @@ final class AppModel: ObservableObject {
         guard let page = try? await store.mediaFeed(
             followingOnly: false, limit: Self.momentsPageSize, offset: moments.count
         ) else { return }
-        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) }
-            .filter { incoming in !moments.contains { $0.id == incoming.id } }
+        let seen = Set(moments.map(\.id))
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) && !seen.contains($0.id) }
         moments.append(contentsOf: fresh)
         hasMoreMoments = page.count == Self.momentsPageSize
     }
@@ -239,10 +260,43 @@ final class AppModel: ObservableObject {
         guard let page = try? await store.mediaFeed(
             followingOnly: true, limit: Self.momentsPageSize, offset: followedMoments.count
         ) else { return }
-        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) }
-            .filter { incoming in !followedMoments.contains { $0.id == incoming.id } }
+        let seen = Set(followedMoments.map(\.id))
+        let fresh = page.filter { !fanPrefs.isBlocked($0.creatorID) && !seen.contains($0.id) }
         followedMoments.append(contentsOf: fresh)
         hasMoreFollowedMoments = page.count == Self.momentsPageSize
+    }
+
+    /// Refreshes only the content feeds — used after mutations where social
+    /// state (notifications, stats, blocks) can't have changed.
+    func refreshFeeds() async {
+        async let published = store.publishedEventsPage(
+            limit: Self.feedPageSize, offset: 0, followingOnly: false, popular: true
+        )
+        async let people = store.allCreators()
+        async let feed = store.mediaFeed(followingOnly: false, limit: Self.momentsPageSize, offset: 0)
+        async let followedFeed = store.mediaFeed(followingOnly: true, limit: Self.momentsPageSize, offset: 0)
+        let creatorId = currentCreator?.id
+        let existingMine = myEventsList
+        async let mine: [Event] = creatorId == nil
+            ? []
+            : ((try? await store.events(forCreator: creatorId!)) ?? existingMine)
+        if let firstPage = try? await published {
+            events = firstPage.filter { !fanPrefs.isBlocked($0.creatorId) }
+            hasMoreEvents = firstPage.count == Self.feedPageSize
+        }
+        if let allCreators = try? await people {
+            creators = allCreators.filter { !fanPrefs.isBlocked($0.id) }
+        }
+        if let feedPage = try? await feed {
+            moments = feedPage.filter { !fanPrefs.isBlocked($0.creatorID) }
+            hasMoreMoments = feedPage.count == Self.momentsPageSize
+        }
+        if let followedPage = try? await followedFeed {
+            followedMoments = followedPage.filter { !fanPrefs.isBlocked($0.creatorID) }
+            hasMoreFollowedMoments = followedPage.count == Self.momentsPageSize
+        }
+        myEventsList = await mine
+        await refreshFullEvents()
     }
 
     // MARK: Analytics
@@ -276,17 +330,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Loads engagement stats for every event owned by the signed-in creator.
-    private func loadCreatorStats() async {
-        guard currentCreator != nil else {
-            statsByEvent = [:]
-            return
-        }
-        if let stats = try? await analyticsStore.creatorStats() {
-            statsByEvent = Dictionary(stats.map { ($0.eventID, $0) }, uniquingKeysWith: { a, _ in a })
-        }
-    }
-
     /// Records that a fan opened an event page. Fire-and-forget.
     func recordView(_ eventID: UUID) async {
         try? await analyticsStore.recordView(eventID: eventID)
@@ -299,7 +342,7 @@ final class AppModel: ObservableObject {
     }
 
     func creator(id: UUID) -> Creator? {
-        creators.first { $0.id == id }
+        creatorIndex[id]
     }
 
     func myEvents() -> [Event] { myEventsList }
@@ -331,17 +374,21 @@ final class AppModel: ObservableObject {
         await perform { try await self.store.addMedia(item, toEvent: eventId) }
     }
 
+    /// Uploads a media file (streamed from disk, not held in memory). When
+    /// `refreshes` is false the caller is expected to refresh once after the
+    /// batch — avoids a full feed reload per file during multi-picks.
     func uploadMedia(
-        data: Data,
+        fileURL: URL,
         fileExtension: String,
         kind: MediaKind,
         thumbnailData: Data?,
-        to eventId: UUID
+        to eventId: UUID,
+        refreshes: Bool = true
     ) async throws {
         uploadProgress = 0
         defer { uploadProgress = nil }
         _ = try await mediaUploadService.upload(
-            data: data,
+            fileURL: fileURL,
             fileExtension: fileExtension,
             kind: kind,
             to: eventId,
@@ -349,7 +396,7 @@ final class AppModel: ObservableObject {
         ) { [weak self] fraction in
             Task { @MainActor in self?.uploadProgress = fraction }
         }
-        await refresh()
+        if refreshes { await refreshFeeds() }
     }
 
     func updateProfileImage(data: Data, fileExtension: String) async -> Bool {
@@ -534,24 +581,41 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Looks up an event from the loaded feed, falling back to the store.
+    /// Looks up an event for a mutation — must have its full media array, so
+    /// lite list entries and partial fetches fall through to a store load.
     private func resolveEvent(id: UUID) async -> Event? {
-        if let local = event(id: id) { return local }
-        return (try? await store.event(id: id)) ?? nil
+        if let local = event(id: id), !local.media.isEmpty { return local }
+        return await fetchFullEvent(id: id)
     }
 
-    /// Loads an event by id — the cached copy if present, otherwise a fetch.
-    /// Used by media deep-views (Moments feed, media comments) that can reach
-    /// events not in the current feed page.
+    /// Loads an event by id — a cached full copy if present, the loaded list
+    /// otherwise, falling back to a store fetch.
     func loadEvent(id: UUID) async -> Event? {
-        if let cached = event(id: id) ?? myEventsList.first(where: { $0.id == id }) {
-            return cached
-        }
+        if let cached = event(id: id) { return cached }
         return try? await store.event(id: id)
     }
 
+    /// Fetches the full event (with media) from the store and caches it, so
+    /// views reading `event(id:)` see the media array reactively.
+    @discardableResult
+    func fetchFullEvent(id: UUID) async -> Event? {
+        guard let event = try? await store.event(id: id) else { return nil }
+        fullEvents[id] = event
+        return event
+    }
+
+    /// Refreshes every cached full event (usually just the open detail page)
+    /// after feed data is reloaded.
+    private func refreshFullEvents() async {
+        for id in fullEvents.keys {
+            if let fresh = try? await store.event(id: id) {
+                fullEvents[id] = fresh
+            }
+        }
+    }
+
     func event(id: UUID) -> Event? {
-        events.first { $0.id == id } ?? myEventsList.first { $0.id == id }
+        fullEvents[id] ?? eventIndex[id] ?? myEventsList.first { $0.id == id }
     }
 
     /// Called after a successful sign-in/registration. Switches to the account's
@@ -823,10 +887,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Mutations refetch only the content feeds — notifications, stats, and
+    /// block state can't have changed, so a full `refresh()` is overkill.
     private func perform(_ action: @escaping () async throws -> Void) async {
         do {
             try await action()
-            await refresh()
+            await refreshFeeds()
         } catch {
             errorMessage = error.localizedDescription
         }

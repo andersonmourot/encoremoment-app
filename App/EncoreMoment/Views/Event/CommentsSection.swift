@@ -106,12 +106,12 @@ struct CommentsSection: View {
         hasLoaded = true
     }
 
+    /// One batched call covers every comment's like state — `likes/all`
+    /// returns summaries for media comments too, so this works for both the
+    /// event thread and per-media threads.
     private func loadLikes() async {
-        var summaries: [UUID: LikeSummary] = [:]
-        for comment in comments {
-            summaries[comment.id] = await model.commentLikeSummary(commentID: comment.id, eventID: event.id)
-        }
-        likesByComment = summaries
+        let summaries = await model.likeSummaries(forEvent: event.id)
+        likesByComment = summaries.commentsByID
     }
 
     private func post() async {
@@ -137,8 +137,14 @@ struct CommentsSection: View {
 
     private func toggleLike(_ comment: Comment) async {
         let current = likesByComment[comment.id] ?? LikeSummary(eventID: comment.id)
-        if let updated = await model.setCommentLike(commentID: comment.id, eventID: event.id, !current.likedByViewer) {
+        var optimistic = current
+        optimistic.likedByViewer.toggle()
+        optimistic.count += optimistic.likedByViewer ? 1 : -1
+        likesByComment[comment.id] = optimistic
+        if let updated = await model.setCommentLike(commentID: comment.id, eventID: event.id, optimistic.likedByViewer) {
             likesByComment[comment.id] = updated
+        } else {
+            likesByComment[comment.id] = current
         }
     }
 }

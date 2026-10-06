@@ -129,6 +129,9 @@ struct EventDetailView: View {
         .navigationTitle(liveEvent.title)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: liveEvent.id) {
+            // List rows carry a "lite" event (no media array) — pull the full
+            // event into the model's cache so `liveEvent` gets the media.
+            await model.fetchFullEvent(id: event.id)
             await model.recordView(liveEvent.id)
             let summaries = await model.likeSummaries(forEvent: liveEvent.id)
             likeSummary = summaries.event
@@ -297,23 +300,36 @@ struct EventDetailView: View {
 
     private func toggleLike(currentlyLiked: Bool) {
         isTogglingLike = true
+        let previous = likeSummary
+        var optimistic = previous ?? LikeSummary(eventID: liveEvent.id)
+        optimistic.likedByViewer = !currentlyLiked
+        optimistic.count += optimistic.likedByViewer ? 1 : -1
+        likeSummary = optimistic
         Task {
             defer { isTogglingLike = false }
             if let updated = await model.setLike(eventID: liveEvent.id, !currentlyLiked) {
                 likeSummary = updated
+            } else {
+                likeSummary = previous
             }
         }
     }
 
     private func toggleMediaLike(_ item: MediaItem) {
         let summary = mediaLikes[item.id] ?? LikeSummary(eventID: item.id)
+        var optimistic = summary
+        optimistic.likedByViewer.toggle()
+        optimistic.count += optimistic.likedByViewer ? 1 : -1
+        mediaLikes[item.id] = optimistic
         Task {
             if let updated = await model.setMediaLike(
                 mediaID: item.id,
                 eventID: liveEvent.id,
-                !summary.likedByViewer
+                optimistic.likedByViewer
             ) {
                 mediaLikes[item.id] = updated
+            } else {
+                mediaLikes[item.id] = summary
             }
         }
     }
@@ -349,20 +365,11 @@ struct EventDetailView: View {
             mediaSelection = []
         }
         do {
-            let importItems = try await makeImportItems(from: items)
+            let importItems = try await EventMediaImporter.makeImportItems(from: items)
             try await EventMediaImporter.importItems(importItems, to: liveEvent.id, model: model)
         } catch {
             model.errorMessage = error.localizedDescription
         }
-    }
-
-    private func makeImportItems(from items: [PhotosPickerItem]) async throws -> [EventMediaImportItem] {
-        var importItems: [EventMediaImportItem] = []
-        for item in items {
-            guard let data = try await item.loadTransferable(type: Data.self) else { continue }
-            importItems.append(EventMediaImportItem(data: data, supportedContentTypes: item.supportedContentTypes))
-        }
-        return importItems
     }
 }
 

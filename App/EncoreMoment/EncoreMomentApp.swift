@@ -52,6 +52,9 @@ struct EncoreMomentApp: App {
                                 }
                             }
                     }
+                    .environmentObject(model)
+                    .environmentObject(auth)
+                    .environmentObject(settings)
                 }
         }
     }

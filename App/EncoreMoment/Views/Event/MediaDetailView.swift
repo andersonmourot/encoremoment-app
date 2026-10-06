@@ -17,6 +17,9 @@ struct MediaDetailView: View {
     @State private var likeSummary: LikeSummary?
     @State private var isTogglingLike = false
     @State private var showComments = false
+    /// Created once per item — inline `AVPlayer(url:)` in body would be
+    /// rebuilt on every state change and restart playback.
+    @State private var player: AVPlayer?
 
     private enum DownloadState: Equatable {
         case idle, downloading, done, failed(String)
@@ -65,6 +68,9 @@ struct MediaDetailView: View {
                 MediaCommentsSheet(item: item)
             }
             .task(id: item.id) {
+                if item.kind == .video {
+                    player = AVPlayer(url: resolvedURL(item.url))
+                }
                 likeSummary = initialLikeSummary.eventID == item.id
                     ? initialLikeSummary
                     : await model.mediaLikeSummary(mediaID: item.id, eventID: item.eventId)
@@ -91,7 +97,12 @@ struct MediaDetailView: View {
                 }
             }
         case .video:
-            VideoPlayer(player: AVPlayer(url: resolvedURL(item.url)))
+            if let player {
+                VideoPlayer(player: player)
+            } else {
+                ProgressView()
+                    .tint(.white)
+            }
         }
     }
 
@@ -137,11 +148,18 @@ struct MediaDetailView: View {
 
     private func toggleLike(_ summary: LikeSummary) {
         isTogglingLike = true
+        var optimistic = summary
+        optimistic.likedByViewer.toggle()
+        optimistic.count += optimistic.likedByViewer ? 1 : -1
+        likeSummary = optimistic
         Task {
             defer { isTogglingLike = false }
-            if let updated = await model.setMediaLike(mediaID: item.id, eventID: item.eventId, !summary.likedByViewer) {
+            if let updated = await model.setMediaLike(mediaID: item.id, eventID: item.eventId, optimistic.likedByViewer) {
                 likeSummary = updated
                 onLikeChanged?(updated)
+            } else {
+                // Server rejected — restore the previous state.
+                likeSummary = summary
             }
         }
     }

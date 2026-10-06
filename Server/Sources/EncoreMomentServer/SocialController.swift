@@ -1,6 +1,7 @@
 import Vapor
 import Fluent
 import EncoreMomentCore
+import SQLKit
 
 /// Comments and likes on events. Reads are public (likes optionally use the
 /// token to report the viewer's like state); writes require authentication.
@@ -48,9 +49,9 @@ struct SocialController: RouteCollection {
         // Only event-level comments — media comments come from the
         // per-media endpoint.
         return try await query
+            .filter(\.$mediaId == nil)
             .sort(\.$createdAt, .ascending)
             .all()
-            .filter { $0.mediaId == nil }
             .map { $0.toDTO() }
     }
 
@@ -61,11 +62,15 @@ struct SocialController: RouteCollection {
         _ = try await requireViewableEvent(eventId, req)
         _ = try await requireMedia(mediaId, eventId: eventId, on: req.db)
         let blockedUsers = try await Moderation.blockedUserIDs(for: req)
-        return try await CommentModel.query(on: req.db)
+        var query = CommentModel.query(on: req.db)
             .filter(\.$eventId == eventId)
+            .filter(\.$mediaId == mediaId)
+        if !blockedUsers.isEmpty {
+            query = query.filter(\.$userId !~ Array(blockedUsers))
+        }
+        return try await query
             .sort(\.$createdAt, .ascending)
             .all()
-            .filter { $0.mediaId == mediaId && !blockedUsers.contains($0.userId) }
             .map { $0.toDTO() }
     }
 
@@ -209,17 +214,23 @@ struct SocialController: RouteCollection {
             .filter(\.$userId == userId)
             .first()
         if existing == nil {
-            try await EventLikeModel(eventId: eventId, userId: userId).create(on: req.db)
-            if token.creatorId != event.creatorId {
-                let name = try await NotificationCenter.actorName(for: userId, on: req.db)
-                try await NotificationCenter.notifyCreator(
-                    creatorId: event.creatorId,
-                    kind: .like,
-                    title: "New like",
-                    body: "\(name) liked \(event.title).",
-                    eventId: eventId,
-                    on: req.db
-                )
+            do {
+                try await EventLikeModel(eventId: eventId, userId: userId).create(on: req.db)
+                if token.creatorId != event.creatorId {
+                    let name = try await NotificationCenter.actorName(for: userId, on: req.db)
+                    try await NotificationCenter.notifyCreator(
+                        creatorId: event.creatorId,
+                        kind: .like,
+                        title: "New like",
+                        body: "\(name) liked \(event.title).",
+                        eventId: eventId,
+                        on: req.db
+                    )
+                }
+            } catch {
+                // A racing like hit the unique constraint — the end state is
+                // the same, so it isn't an error.
+                guard Self.isUniqueViolation(error) else { throw error }
             }
         }
         return try await Self.summary(eventId: eventId, viewerId: userId, on: req.db)
@@ -254,7 +265,11 @@ struct SocialController: RouteCollection {
             .filter(\.$userId == userId)
             .first()
         if existing == nil {
-            try await CommentLikeModel(commentId: commentId, userId: userId).create(on: req.db)
+            do {
+                try await CommentLikeModel(commentId: commentId, userId: userId).create(on: req.db)
+            } catch {
+                guard Self.isUniqueViolation(error) else { throw error }
+            }
         }
         return try await Self.commentSummary(commentId: commentId, viewerId: userId, on: req.db)
     }
@@ -287,7 +302,11 @@ struct SocialController: RouteCollection {
             .filter(\.$userId == userId)
             .first()
         if existing == nil {
-            try await MediaLikeModel(mediaId: mediaId, userId: userId).create(on: req.db)
+            do {
+                try await MediaLikeModel(mediaId: mediaId, userId: userId).create(on: req.db)
+            } catch {
+                guard Self.isUniqueViolation(error) else { throw error }
+            }
         }
         return try await Self.mediaSummary(mediaId: mediaId, viewerId: userId, on: req.db)
     }
@@ -305,8 +324,11 @@ struct SocialController: RouteCollection {
 
     /// `GET /media/feed?following=&limit=&offset=` — media across published,
     /// viewable events ordered by likes then recency. `following=true`
-    /// restricts to creators the signed-in viewer follows.
-    func mediaFeed(req: Request) async throws -> [MediaFeedItem] {
+    /// restricts to creators the signed-in viewer follows. Ordering and
+    /// pagination happen in SQL (a like-count join + LIMIT/OFFSET) and the
+    /// response is ETag'd — previously this loaded and sorted every media
+    /// row and every like in the database per request.
+    func mediaFeed(req: Request) async throws -> Response {
         let followingOnly = (try? req.query.get(Bool.self, at: "following")) ?? false
         let limit = max(1, min((try? req.query.get(Int.self, at: "limit")) ?? 50, 100))
         let offset = max(0, (try? req.query.get(Int.self, at: "offset")) ?? 0)
@@ -315,7 +337,7 @@ struct SocialController: RouteCollection {
         var allowedCreatorIds: Set<UUID>? = nil
         if followingOnly {
             guard let uid = req.auth.get(UserToken.self)?.userId else {
-                return []  // anonymous viewers follow nobody
+                return try ETagResponder.respond([MediaFeedItem](), on: req)
             }
             allowedCreatorIds = Set(try await FollowModel.query(on: req.db)
                 .filter(\.$userId == uid).all().map(\.creatorId))
@@ -343,52 +365,90 @@ struct SocialController: RouteCollection {
         let eventById = Dictionary(uniqueKeysWithValues: eventRows.compactMap { event in
             event.id.map { ($0, event) }
         })
-
-        var mediaRows = try await MediaModel.query(on: req.db)
-            .filter(\.$event.$id ~~ Array(eventById.keys))
-            .all()
-        // Like counts + the viewer's own like state for these items.
-        let mediaIds = mediaRows.compactMap(\.id)
-        let likes = mediaIds.isEmpty ? [] : try await MediaLikeModel.query(on: req.db)
-            .filter(\.$mediaId ~~ mediaIds).all()
-        let countByMedia = Dictionary(grouping: likes, by: \.mediaId).mapValues(\.count)
-        let viewerLiked: Set<UUID> = {
-            guard let uid = req.auth.get(UserToken.self)?.userId else { return [] }
-            return Set(likes.filter { $0.userId == uid }.map(\.mediaId))
-        }()
-
-        mediaRows.sort {
-            let lc = countByMedia[$0.id ?? UUID()] ?? 0
-            let rc = countByMedia[$1.id ?? UUID()] ?? 0
-            if lc != rc { return lc > rc }
-            return $0.createdAt > $1.createdAt
+        let eventIds = Array(eventById.keys)
+        guard !eventIds.isEmpty else {
+            return try ETagResponder.respond([MediaFeedItem](), on: req)
         }
-        guard offset < mediaRows.count else { return [] }
-        let page = mediaRows.dropFirst(offset).prefix(limit)
+        guard let sql = req.db as? any SQLDatabase else {
+            throw Abort(.internalServerError)
+        }
+
+        // One page of media ids ordered by like count — the expensive part,
+        // done entirely in SQL.
+        struct OrderRow: Decodable {
+            let id: UUID
+            let likeCount: Int
+            enum CodingKeys: String, CodingKey { case id; case likeCount = "like_count" }
+        }
+        let orderRows = try await sql.raw("""
+            SELECT m.id AS id, COUNT(l.id) AS like_count
+            FROM \(unsafeRaw: MediaModel.schema) AS m
+            LEFT JOIN \(unsafeRaw: MediaLikeModel.schema) AS l ON l.media_id = m.id
+            WHERE m.event_id IN (\(binds: eventIds))
+            GROUP BY m.id
+            ORDER BY like_count DESC, m.created_at DESC
+            LIMIT \(bind: limit) OFFSET \(bind: offset)
+            """).all(decoding: OrderRow.self)
+        let pageIds = orderRows.map(\.id)
+        let mediaById = Dictionary(
+            try await MediaModel.query(on: req.db).filter(\.$id ~~ pageIds).all()
+                .compactMap { m in m.id.map { ($0, m) } },
+            uniquingKeysWith: { a, _ in a }
+        )
+
+        // The viewer's own like state — only their rows, only for this page.
+        let viewerLiked: Set<UUID>
+        if let uid = req.auth.get(UserToken.self)?.userId, !pageIds.isEmpty {
+            viewerLiked = Set(try await MediaLikeModel.query(on: req.db)
+                .filter(\.$mediaId ~~ pageIds)
+                .filter(\.$userId == uid)
+                .all().map(\.mediaId))
+        } else {
+            viewerLiked = []
+        }
 
         let creatorNames = Dictionary(uniqueKeysWithValues: try await CreatorModel.query(on: req.db)
             .filter(\.$id ~~ Array(Set(eventRows.map(\.creatorId))))
             .all().compactMap { creator in creator.id.map { ($0, creator.displayName) } })
 
-        // Comment counts for the page's media items.
-        let pageIds = page.compactMap(\.id)
-        let comments = pageIds.isEmpty ? [] : try await CommentModel.query(on: req.db)
-            .filter(\.$mediaId ~~ pageIds).all()
-        let commentCountByMedia = Dictionary(grouping: comments, by: \.mediaId).mapValues(\.count)
+        // Comment counts for the page's media items — grouped in SQL.
+        struct CountRow: Decodable {
+            let mediaId: UUID
+            let count: Int
+            enum CodingKeys: String, CodingKey { case mediaId = "media_id"; case count }
+        }
+        let commentCountByMedia = pageIds.isEmpty ? [:] : Dictionary(
+            try await sql.raw("""
+                SELECT media_id, COUNT(*) AS count
+                FROM \(unsafeRaw: CommentModel.schema)
+                WHERE media_id IN (\(binds: pageIds))
+                GROUP BY media_id
+                """).all(decoding: CountRow.self)
+                .map { ($0.mediaId, $0.count) },
+            uniquingKeysWith: { a, _ in a }
+        )
 
-        return page.compactMap { media in
-            guard let mid = media.id, let event = eventById[media.$event.id] else { return nil }
+        let items = orderRows.compactMap { row -> MediaFeedItem? in
+            guard let media = mediaById[row.id], let event = eventById[media.$event.id] else { return nil }
             return MediaFeedItem(
                 media: media.toDTO(),
                 eventID: media.$event.id,
                 eventTitle: event.title,
                 creatorID: event.creatorId,
                 creatorName: creatorNames[event.creatorId] ?? "",
-                likeCount: countByMedia[mid] ?? 0,
-                likedByViewer: viewerLiked.contains(mid),
-                commentCount: commentCountByMedia[mid] ?? 0
+                likeCount: row.likeCount,
+                likedByViewer: viewerLiked.contains(row.id),
+                commentCount: commentCountByMedia[row.id] ?? 0
             )
         }
+        return try ETagResponder.respond(items, on: req)
+    }
+
+    /// SQLite raises a UNIQUE-constraint error when a racing like lands
+    /// between the existence check and the insert — the end state is the
+    /// same, so that isn't an error.
+    static func isUniqueViolation(_ error: Error) -> Bool {
+        String(describing: error).localizedCaseInsensitiveContains("unique constraint")
     }
 
     // MARK: Helpers

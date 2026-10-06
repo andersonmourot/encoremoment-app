@@ -57,20 +57,11 @@ struct AddMediaView: View {
         isImporting = true
         defer { isImporting = false }
         do {
-            let importItems = try await makeImportItems(from: items)
+            let importItems = try await EventMediaImporter.makeImportItems(from: items)
             try await EventMediaImporter.importItems(importItems, to: eventId, model: model)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    private func makeImportItems(from items: [PhotosPickerItem]) async throws -> [EventMediaImportItem] {
-        var importItems: [EventMediaImportItem] = []
-        for item in items {
-            guard let data = try await item.loadTransferable(type: Data.self) else { continue }
-            importItems.append(EventMediaImportItem(data: data, supportedContentTypes: item.supportedContentTypes))
-        }
-        return importItems
     }
 }

@@ -22,6 +22,14 @@ enum MediaStorage {
         return url
     }
 
+    static func store(fileAt source: URL, fileExtension: String) throws -> URL {
+        let url = mediaDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(fileExtension.isEmpty ? "dat" : fileExtension)
+        try FileManager.default.copyItem(at: source, to: url)
+        return url
+    }
+
     static func resolvedLocalFileURL(for url: URL) -> URL? {
         guard url.isFileURL else { return nil }
         if FileManager.default.fileExists(atPath: url.path) { return url }

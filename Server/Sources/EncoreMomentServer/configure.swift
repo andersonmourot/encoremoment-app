@@ -20,6 +20,10 @@ public func configure(_ app: Application) async throws {
     // Media/avatar uploads need to accept normal phone photos and short videos.
     app.routes.defaultMaxBodySize = "100mb"
 
+    // Gzip JSON responses — feed payloads compress ~80%. Media bytes are
+    // served from R2, so this only touches API traffic.
+    app.http.server.configuration.responseCompression = .enabled
+
     // SQLite on a configurable path (a Fly volume in production).
     let dbPath = Environment.get("DATABASE_PATH") ?? "db.sqlite"
     app.databases.use(.sqlite(.file(dbPath)), as: .sqlite)
@@ -60,6 +64,7 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateEventInviteLink())
     app.migrations.add(CreateDeviceToken())
     app.migrations.add(AddCommentMediaId())
+    app.migrations.add(DedupeAndIndexLikes())
 
     // The InTheMomentServer -> EncoreMomentServer module rename changed the
     // qualified names Fluent recorded in _fluent_migrations, so an existing

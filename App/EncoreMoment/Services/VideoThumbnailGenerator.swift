@@ -3,15 +3,10 @@ import Foundation
 import UIKit
 
 enum VideoThumbnailGenerator {
-    static func jpegData(for videoData: Data, fileExtension: String) throws -> Data? {
-        let ext = fileExtension.isEmpty ? "mp4" : fileExtension
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension(ext)
-        try videoData.write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let asset = AVURLAsset(url: url)
+    /// Extracts a poster frame directly from the picked file — no in-memory
+    /// copy of the video data needed.
+    static func jpegData(for fileURL: URL) throws -> Data? {
+        let asset = AVURLAsset(url: fileURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 900, height: 900)

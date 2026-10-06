@@ -1,6 +1,7 @@
 import Vapor
 import Fluent
 import EncoreMomentCore
+import SQLKit
 
 func routes(_ app: Application) throws {
     app.get { _ async in "EncoreMoment API is up" }
@@ -117,7 +118,12 @@ struct EventController: RouteCollection {
     }
 
     func index(req: Request) async throws -> Response {
-        var query = EventModel.query(on: req.db).with(\.$media)
+        // Fan-facing lists (?published=true) return "lite" events — media is
+        // omitted and counts/cover are filled from aggregate queries instead.
+        // Creator-facing queries (?creator=) keep the full media array.
+        let lite = (try? req.query.get(Bool.self, at: "published")) == true
+        var query = EventModel.query(on: req.db)
+        if !lite { query = query.with(\.$media) }
         if let published = req.query[Bool.self, at: "published"], published {
             query = query.filter(\.$isPublished == true)
         }
@@ -173,6 +179,22 @@ struct EventController: RouteCollection {
             var dto = model.toDTO()
             dto.likeCount = likeCounts[model.id ?? UUID()] ?? 0
             return dto
+        }
+        if lite {
+            let counts = try await Self.mediaCountsByEvent(ids, on: req.db)
+            let covers = try await Self.firstMediaPreviewByEvent(ids, on: req.db)
+            dtos = dtos.map { dto in
+                var dto = dto
+                if let c = counts[dto.id] {
+                    dto.serverPhotoCount = c.photos
+                    dto.serverVideoCount = c.videos
+                    dto.serverDownloadableCount = c.downloadable
+                }
+                if dto.coverImageURL == nil, let preview = covers[dto.id] {
+                    dto.coverImageURL = preview
+                }
+                return dto
+            }
         }
         if popular { dtos.sort { ($0.likeCount ?? 0) > ($1.likeCount ?? 0) } }
         if let limit, popular {
@@ -242,7 +264,7 @@ struct EventController: RouteCollection {
         return try await Self.reload(link.eventId, on: req.db).toDTO()
     }
 
-    func show(req: Request) async throws -> Event {
+    func show(req: Request) async throws -> Response {
         let model = try await loadEvent(req)
         guard try await EventAccess.canView(model, on: req) else {
             throw Abort(.forbidden, reason: "This event is invite-only.")
@@ -255,7 +277,7 @@ struct EventController: RouteCollection {
                 return !blockedUsers.contains(uploaderID)
             }
         }
-        return dto
+        return try ETagResponder.respond(dto, on: req)
     }
 
     func create(req: Request) async throws -> Event {
@@ -291,11 +313,26 @@ struct EventController: RouteCollection {
             model.applyFields(dto)
             model.creatorId = try token.requireCreatorID()
             try await model.save(on: db)
-            try await MediaModel.query(on: db).filter(\.$event.$id == id).delete()
+            // Diff media instead of delete-all + reinsert — keeps ids, likes,
+            // and comments stable across reorder/publish/cover updates.
+            let existing = try await MediaModel.query(on: db).filter(\.$event.$id == id).all()
+            let incomingIds = Set(dto.media.map(\.id))
+            for old in existing where !(old.id.map { incomingIds.contains($0) } ?? false) {
+                try await old.delete(on: db)
+            }
+            let existingById = Dictionary(
+                existing.compactMap { m in m.id.map { ($0, m) } },
+                uniquingKeysWith: { a, _ in a }
+            )
             for item in dto.media {
-                let media = MediaModel(from: item)
-                media.$event.id = id
-                try await media.create(on: db)
+                if let media = existingById[item.id] {
+                    media.apply(item)
+                    try await media.update(on: db)
+                } else {
+                    let media = MediaModel(from: item)
+                    media.$event.id = id
+                    try await media.create(on: db)
+                }
             }
             return try await Self.reload(id, on: db).toDTO()
         }
@@ -554,6 +591,54 @@ struct EventController: RouteCollection {
             eventId: eventId,
             on: db
         )
+    }
+
+    /// Media counts per event, aggregated in SQL — used to populate lite list
+    /// DTOs without loading the media rows.
+    private static func mediaCountsByEvent(_ eventIds: [UUID], on db: Database) async throws -> [UUID: (photos: Int, videos: Int, downloadable: Int)] {
+        guard let sql = db as? any SQLDatabase, !eventIds.isEmpty else { return [:] }
+        struct Row: Decodable {
+            let eventId: UUID
+            let photos: Int
+            let videos: Int
+            let downloadable: Int
+            enum CodingKeys: String, CodingKey { case eventId = "event_id"; case photos, videos, downloadable }
+        }
+        let rows = try await sql.raw("""
+            SELECT event_id,
+                   SUM(CASE WHEN kind = 'photo' THEN 1 ELSE 0 END) AS photos,
+                   SUM(CASE WHEN kind = 'video' THEN 1 ELSE 0 END) AS videos,
+                   SUM(CASE WHEN is_downloadable = 1 THEN 1 ELSE 0 END) AS downloadable
+            FROM \(unsafeRaw: MediaModel.schema)
+            WHERE event_id IN (\(binds: eventIds))
+            GROUP BY event_id
+            """).all(decoding: Row.self)
+        return Dictionary(rows.map { ($0.eventId, ($0.photos, $0.videos, $0.downloadable)) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// First media item's preview URL per event (sort-order first, thumbnail
+    /// preferred) — the cover fallback for lite list DTOs.
+    private static func firstMediaPreviewByEvent(_ eventIds: [UUID], on db: Database) async throws -> [UUID: URL] {
+        guard let sql = db as? any SQLDatabase, !eventIds.isEmpty else { return [:] }
+        struct Row: Decodable {
+            let eventId: UUID
+            let preview: String
+            enum CodingKeys: String, CodingKey { case eventId = "event_id"; case preview }
+        }
+        let rows = try await sql.raw("""
+            SELECT m.event_id, COALESCE(m.thumbnail_url, m.url) AS preview
+            FROM \(unsafeRaw: MediaModel.schema) m
+            JOIN (
+                SELECT event_id, MIN(sort_order) AS so
+                FROM \(unsafeRaw: MediaModel.schema)
+                WHERE event_id IN (\(binds: eventIds))
+                GROUP BY event_id
+            ) t ON m.event_id = t.event_id AND m.sort_order = t.so
+            WHERE m.event_id IN (\(binds: eventIds))
+            """).all(decoding: Row.self)
+        return Dictionary(rows.compactMap { row in
+            URL(string: row.preview).map { (row.eventId, $0) }
+        }, uniquingKeysWith: { a, _ in a })
     }
 
     private static func reload(_ id: UUID, on db: Database) async throws -> EventModel {

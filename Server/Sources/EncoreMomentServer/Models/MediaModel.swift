@@ -42,6 +42,21 @@ final class MediaModel: Model, @unchecked Sendable {
         self.createdAt = item.createdAt
     }
 
+    /// Updates mutable fields during an event update — the row id, uploader
+    /// attribution, official flag, and creation time are preserved (diff-based
+    /// updates replaced the old delete-all + reinsert).
+    func apply(_ item: MediaItem) {
+        self.kind = item.kind.rawValue
+        self.url = item.url.absoluteString
+        self.thumbnailURL = item.thumbnailURL?.absoluteString
+        self.caption = item.caption
+        self.width = item.width
+        self.height = item.height
+        self.durationSeconds = item.durationSeconds
+        self.isDownloadable = item.isDownloadable
+        self.sortOrder = item.sortOrder
+    }
+
     func toDTO() -> MediaItem {
         MediaItem(
             id: id ?? UUID(),

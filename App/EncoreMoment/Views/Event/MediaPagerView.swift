@@ -2,6 +2,8 @@ import SwiftUI
 import EncoreMomentCore
 
 /// Swipeable full-screen viewer that pages left/right through a media list.
+/// Uses a lazy paged ScrollView — `TabView(.page)` eagerly instantiates every
+/// page (every image fetch and every AVPlayer) when the viewer opens.
 struct MediaPagerView: View {
     let items: [MediaItem]
     /// The like state per media id, kept in sync with the parent list.
@@ -9,7 +11,7 @@ struct MediaPagerView: View {
     var onLikeChanged: ((LikeSummary) -> Void)? = nil
     var onDownloaded: (() -> Void)? = nil
 
-    @State private var selection: UUID
+    @State private var selection: UUID?
 
     init(
         items: [MediaItem],
@@ -26,18 +28,23 @@ struct MediaPagerView: View {
     }
 
     var body: some View {
-        TabView(selection: $selection) {
-            ForEach(items) { item in
-                MediaDetailView(
-                    item: item,
-                    initialLikeSummary: likeSummaries[item.id] ?? LikeSummary(eventID: item.id),
-                    onLikeChanged: onLikeChanged,
-                    onDownloaded: onDownloaded
-                )
-                .tag(item.id)
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(items) { item in
+                    MediaDetailView(
+                        item: item,
+                        initialLikeSummary: likeSummaries[item.id] ?? LikeSummary(eventID: item.id),
+                        onLikeChanged: onLikeChanged,
+                        onDownloaded: onDownloaded
+                    )
+                    .containerRelativeFrame(.horizontal)
+                }
             }
+            .scrollTargetLayout()
         }
-        .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $selection)
+        .scrollIndicators(.hidden)
         .background(.black)
         .ignoresSafeArea()
     }

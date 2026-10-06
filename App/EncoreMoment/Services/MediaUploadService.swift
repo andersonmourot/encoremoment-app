@@ -16,8 +16,10 @@ struct MediaUploadService {
         self.decoder = decoder
     }
 
+    /// Streams the multipart body from a temp file — a 90MB video upload
+    /// stays out of memory entirely (`upload(for:fromFile:)` reads from disk).
     func upload(
-        data: Data,
+        fileURL: URL,
         fileExtension: String,
         kind: MediaKind,
         to eventID: UUID,
@@ -31,13 +33,14 @@ struct MediaUploadService {
         if let token = tokenProvider() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let body = multipartBody(
+        let bodyFile = try writeMultipartBodyFile(
             boundary: boundary,
-            data: data,
+            fileURL: fileURL,
             fileExtension: fileExtension,
             kind: kind,
             thumbnailData: thumbnailData
         )
+        defer { try? FileManager.default.removeItem(at: bodyFile) }
 
         let responseData: Data
         let response: URLResponse
@@ -46,9 +49,9 @@ struct MediaUploadService {
             let delegate = UploadProgressDelegate(onProgress: onProgress)
             let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
             defer { session.invalidateAndCancel() }
-            (responseData, response) = try await session.upload(for: request, from: body)
+            (responseData, response) = try await session.upload(for: request, fromFile: bodyFile)
         } else {
-            (responseData, response) = try await URLSession.shared.upload(for: request, from: body)
+            (responseData, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFile)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw uploadError(response: response, data: responseData)
@@ -85,35 +88,66 @@ struct MediaUploadService {
         return UploadError.failed(status: status, reason: reason)
     }
 
-    private func multipartBody(
+    /// Writes the multipart body to a temp file, streaming the media payload
+    /// in chunks so only one file-size of disk — not RAM — is used.
+    private func writeMultipartBodyFile(
         boundary: String,
-        data: Data,
+        fileURL: URL,
         fileExtension: String,
         kind: MediaKind,
         thumbnailData: Data?
-    ) -> Data {
-        var body = Data()
+    ) throws -> URL {
         let ext = fileExtension.isEmpty ? defaultFileExtension(for: kind) : fileExtension
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("upload-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: tempURL)
+        defer { try? handle.close() }
 
-        body.appendFormField(name: "kind", value: kind.rawValue, boundary: boundary)
-        body.appendFileField(
+        try handle.write(contentsOf: formField(name: "kind", value: kind.rawValue, boundary: boundary))
+        try handle.write(contentsOf: fileFieldHeader(
             name: "file",
             filename: "upload.\(ext)",
-            data: data,
             mimeType: mimeType(for: ext, kind: kind),
             boundary: boundary
-        )
+        ))
+        if let input = InputStream(url: fileURL) {
+            input.open()
+            defer { input.close() }
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            while input.hasBytesAvailable {
+                let read = input.read(&buffer, maxLength: buffer.count)
+                if read <= 0 { break }
+                try handle.write(contentsOf: Data(buffer[0..<read]))
+            }
+        }
+        try handle.write(contentsOf: Data("\r\n".utf8))
         if let thumbnailData {
-            body.appendFileField(
+            try handle.write(contentsOf: fileField(
                 name: "thumbnail",
                 filename: "thumbnail.jpg",
                 data: thumbnailData,
                 mimeType: "image/jpeg",
                 boundary: boundary
-            )
+            ))
         }
-        body.append("--\(boundary)--\r\n")
-        return body
+        try handle.write(contentsOf: Data("--\(boundary)--\r\n".utf8))
+        return tempURL
+    }
+
+    private func formField(name: String, value: String, boundary: String) -> Data {
+        Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8)
+    }
+
+    private func fileFieldHeader(name: String, filename: String, mimeType: String, boundary: String) -> Data {
+        Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8)
+    }
+
+    private func fileField(name: String, filename: String, data: Data, mimeType: String, boundary: String) -> Data {
+        var field = fileFieldHeader(name: name, filename: filename, mimeType: mimeType, boundary: boundary)
+        field.append(data)
+        field.append(Data("\r\n".utf8))
+        return field
     }
 
     private func fileOnlyMultipartBody(
