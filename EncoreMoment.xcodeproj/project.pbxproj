@@ -23,6 +23,7 @@
 		5016D00B3F9333E28B729411 /* CreatorEventDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FB4F13E7DE8C90FB0DB51B5 /* CreatorEventDetailView.swift */; };
 		503DBD8905F67FC98C18F68A /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A01B5A76F6FAD308C46AFA /* SavedView.swift */; };
 		565F7195FDED3FBDD9A3B5B2 /* TokenHolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75FBB99DDA73A3F03DFE184D /* TokenHolder.swift */; };
+		5703DD84935749C7D0F26D18 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AC35E7E897C32C0913B0E44A /* PrivacyInfo.xcprivacy */; };
 		59F05002C52A66E3B44E84B3 /* DefaultAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7347B58F9FA3B2E22E480A1E /* DefaultAvatarView.swift */; };
 		6652CC5BC7193D4E1A641246 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10960571DED468950FAE0944 /* Theme.swift */; };
 		666BC2E51C15AEB34B572538 /* MediaDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C3D8B5115A447DC598B07D /* MediaDetailView.swift */; };
@@ -86,9 +87,11 @@
 		8F576FF0B34C2A4A367BFB39 /* ReportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportSheet.swift; sourceTree = "<group>"; };
 		90F92A4DA1EE005D6501C690 /* MediaDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaDownloader.swift; sourceTree = "<group>"; };
 		94F2728BA8169A3AA5693E6F /* inthemoment-app */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "inthemoment-app"; path = .; sourceTree = SOURCE_ROOT; };
+		9B9A11D5F8C664D178C0042A /* EncoreMoment.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EncoreMoment.entitlements; sourceTree = "<group>"; };
 		9FB4F13E7DE8C90FB0DB51B5 /* CreatorEventDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreatorEventDetailView.swift; sourceTree = "<group>"; };
 		A535588DDD886954477C81E2 /* MediaStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaStorage.swift; sourceTree = "<group>"; };
 		A939CECF5804A9B7E390DCB0 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		AC35E7E897C32C0913B0E44A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		ADC7496ECC7BA853D7A29B7A /* MediaPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPagerView.swift; sourceTree = "<group>"; };
 		AFF8AAE2C825BC7ED6A015C5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		B367AB594167C5204A6B322B /* ImageLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageLoader.swift; sourceTree = "<group>"; };
@@ -273,8 +276,10 @@
 				AFF8AAE2C825BC7ED6A015C5 /* AppConfig.swift */,
 				DB59950E0FC4513E877E6003 /* AppModel.swift */,
 				59D0202E8E7C8C21EFF49D07 /* Assets.xcassets */,
+				9B9A11D5F8C664D178C0042A /* EncoreMoment.entitlements */,
 				BA7E0CC5EFF3DFE7A5DC0A27 /* EncoreMomentApp.swift */,
 				122EE494838A57F65A0CA4F1 /* Info.plist */,
+				AC35E7E897C32C0913B0E44A /* PrivacyInfo.xcprivacy */,
 				10960571DED468950FAE0944 /* Theme.swift */,
 				F7DF0CB3D8B5C6CE1D3BF1E7 /* Services */,
 				8F322A43D108B175F5E8CAFA /* Views */,
@@ -333,6 +338,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					D32F65E3B42C7EFD8AADB1AC = {
+						DevelopmentTeam = 3YN4J9XJ3C;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = EADFBAE5CA930964950A02F1 /* Build configuration list for PBXProject "EncoreMoment" */;
@@ -363,6 +372,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DB3769283D0E76EEF18F7051 /* Assets.xcassets in Resources */,
+				5703DD84935749C7D0F26D18 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -486,8 +496,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/EncoreMoment/EncoreMoment.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 3YN4J9XJ3C;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = App/EncoreMoment/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -506,8 +519,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/EncoreMoment/EncoreMoment.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 3YN4J9XJ3C;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = App/EncoreMoment/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

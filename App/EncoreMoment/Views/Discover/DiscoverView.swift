@@ -26,7 +26,7 @@ struct DiscoverView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                CollapsingTabHeader("In The Moment", collapsed: headerCollapsed)
+                CollapsingTabHeader("EncoreMoment", collapsed: headerCollapsed)
 
                 if !headerCollapsed {
                     Picker("Feed", selection: $rail) {
@@ -47,7 +47,7 @@ struct DiscoverView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: headerCollapsed)
             .onChange(of: rail) { scrollOffset = 0 }
-            .navigationTitle("In The Moment")
+            .navigationTitle("EncoreMoment")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
                 if let event = model.event(id: id) {
