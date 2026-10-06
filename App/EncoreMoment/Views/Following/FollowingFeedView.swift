@@ -7,6 +7,9 @@ struct FollowingFeedView: View {
     @EnvironmentObject private var model: AppModel
     @State private var path: [UUID] = []
     @State private var rail: Rail = .moments
+    @State private var scrollOffset: CGFloat = 0
+
+    private var headerCollapsed: Bool { scrollOffset < -24 }
 
     private enum Rail {
         case moments, events
@@ -33,7 +36,7 @@ struct FollowingFeedView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabHeader("Following")
+                CollapsingTabHeader("Following", collapsed: headerCollapsed)
 
                 Picker("Feed", selection: $rail) {
                     Text("Moments").tag(Rail.moments)
@@ -49,6 +52,7 @@ struct FollowingFeedView: View {
                     eventsContent
                 }
             }
+            .onChange(of: rail) { scrollOffset = 0 }
             .navigationTitle("Following")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
@@ -76,7 +80,8 @@ struct FollowingFeedView: View {
             MomentsGridView(
                 items: momentResults,
                 hasMore: model.hasMoreFollowedMoments,
-                loadMore: { await model.loadMoreFollowedMoments() }
+                loadMore: { await model.loadMoreFollowedMoments() },
+                scrollOffset: $scrollOffset
             )
         }
     }
@@ -92,6 +97,7 @@ struct FollowingFeedView: View {
         ) {
             ScrollView {
                 LazyVStack(spacing: 16) {
+                    ScrollSentinel()
                     ForEach(results) { event in
                         FollowingEventRow(event: event, creator: model.creator(id: event.creatorId))
                             .contentShape(Rectangle())
@@ -101,6 +107,7 @@ struct FollowingFeedView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }
+            .trackScrollOffset($scrollOffset)
         } empty: {
             emptyState
         }

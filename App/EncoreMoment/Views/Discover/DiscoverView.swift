@@ -7,6 +7,9 @@ struct DiscoverView: View {
     @EnvironmentObject private var model: AppModel
     @State private var path: [UUID] = []
     @State private var rail: Rail = .moments
+    @State private var scrollOffset: CGFloat = 0
+
+    private var headerCollapsed: Bool { scrollOffset < -24 }
 
     private enum Rail {
         case moments, events
@@ -23,7 +26,7 @@ struct DiscoverView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabHeader("In The Moment")
+                CollapsingTabHeader("In The Moment", collapsed: headerCollapsed)
 
                 Picker("Feed", selection: $rail) {
                     Text("Moments").tag(Rail.moments)
@@ -39,6 +42,7 @@ struct DiscoverView: View {
                     eventsContent
                 }
             }
+            .onChange(of: rail) { scrollOffset = 0 }
             .navigationTitle("In The Moment")
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
@@ -64,7 +68,8 @@ struct DiscoverView: View {
             MomentsGridView(
                 items: momentResults,
                 hasMore: model.hasMoreMoments,
-                loadMore: { await model.loadMoreMoments() }
+                loadMore: { await model.loadMoreMoments() },
+                scrollOffset: $scrollOffset
             )
         }
     }
@@ -80,6 +85,7 @@ struct DiscoverView: View {
         ) {
             ScrollView {
                 LazyVStack(spacing: 16) {
+                    ScrollSentinel()
                     ForEach(results) { event in
                         EventRow(event: event, creator: model.creator(id: event.creatorId))
                             .contentShape(Rectangle())
@@ -100,6 +106,7 @@ struct DiscoverView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }
+            .trackScrollOffset($scrollOffset)
         } empty: {
             ContentUnavailableViewCompat(
                 title: "No events yet",

@@ -7,6 +7,9 @@ struct SearchView: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
     @State private var path: [UUID] = []
+    @State private var scrollOffset: CGFloat = 0
+
+    private var headerCollapsed: Bool { scrollOffset < -24 }
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -36,9 +39,12 @@ struct SearchView: View {
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 0) {
-                TabHeader("Search")
+                CollapsingTabHeader("Search", collapsed: headerCollapsed)
 
                 List {
+                ScrollSentinel()
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
                 if !creatorResults.isEmpty {
                     Section(trimmedQuery.isEmpty ? "Suggested Creators" : "Creators") {
                         ForEach(creatorResults) { creator in
@@ -67,6 +73,7 @@ struct SearchView: View {
                     }
                 }
                 }
+                .trackScrollOffset($scrollOffset)
             }
             .navigationTitle("Search")
             .toolbar(.hidden, for: .navigationBar)

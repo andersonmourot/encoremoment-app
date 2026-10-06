@@ -5,11 +5,14 @@ import EncoreMomentCore
 struct SavedView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showingAuth = false
+    @State private var scrollOffset: CGFloat = 0
+
+    private var headerCollapsed: Bool { scrollOffset < -24 }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                TabHeader("Saved")
+                CollapsingTabHeader("Saved", collapsed: headerCollapsed)
 
                 Group {
                 let favorites = model.favoriteEvents
@@ -21,6 +24,9 @@ struct SavedView: View {
                     retry: { await model.refresh() }
                 ) {
                     List {
+                        ScrollSentinel()
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
                         if !model.isAccountSignedIn {
                             Section {
                                 Button {
@@ -43,6 +49,7 @@ struct SavedView: View {
                             }
                         }
                     }
+                    .trackScrollOffset($scrollOffset)
                 } empty: {
                     ContentUnavailableViewCompat(
                         title: "Nothing saved yet",
