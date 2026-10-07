@@ -1,5 +1,6 @@
 import Foundation
 import Crypto
+import EncoreMomentCore
 import NIOCore
 import Vapor
 
@@ -39,7 +40,135 @@ struct UploadsConfigurationKey: StorageKey {
     typealias Value = UploadsConfiguration
 }
 
+struct PresignedUpload {
+    /// PUT URL signed for direct client→R2 upload (15-minute TTL).
+    let uploadURL: URL
+    /// `staging/<uuid>.<ext>` — quarantined until registration promotes it.
+    let key: String
+}
+
 enum UploadStorage {
+    /// Signs a PUT for a staging key. Staging objects sit outside the promoted
+    /// media namespace until `promoteStaged` verifies and copies them.
+    static func presignedPut(contentType: String, fileExtension ext: String, config: R2Configuration) throws -> PresignedUpload {
+        let key = "staging/\(UUID().uuidString).\(ext)"
+        let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
+        let objectURL = config.endpoint
+            .appendingPathComponent(config.bucket)
+            .appendingPathComponent(encodedKey)
+        guard let host = objectURL.host else {
+            throw Abort(.internalServerError, reason: "Invalid R2 endpoint.")
+        }
+
+        let timestamp = Timestamp()
+        let credentialScope = "\(timestamp.short)/auto/s3/aws4_request"
+        let signedHeaders = "content-type;host"
+        let queryItems: [(String, String)] = [
+            ("X-Amz-Algorithm", "AWS4-HMAC-SHA256"),
+            ("X-Amz-Credential", "\(config.accessKeyID)/\(credentialScope)"),
+            ("X-Amz-Date", timestamp.long),
+            ("X-Amz-Expires", "900"),
+            ("X-Amz-SignedHeaders", signedHeaders),
+        ]
+        let canonicalQuery = queryItems
+            .map { "\($0.0.awsSigV4Encoded)=\($0.1.awsSigV4Encoded)" }
+            .sorted()
+            .joined(separator: "&")
+        let canonicalRequest = [
+            "PUT",
+            "/\(config.bucket)/\(encodedKey)",
+            canonicalQuery,
+            "content-type:\(contentType)\nhost:\(host)\n",
+            signedHeaders,
+            "UNSIGNED-PAYLOAD"
+        ].joined(separator: "\n")
+        let stringToSign = [
+            "AWS4-HMAC-SHA256",
+            timestamp.long,
+            credentialScope,
+            canonicalRequest.sha256Hex
+        ].joined(separator: "\n")
+        let signature = signingKey(secret: config.secretAccessKey, date: timestamp.short)
+            .hmacHex(stringToSign)
+
+        guard var components = URLComponents(url: objectURL, resolvingAgainstBaseURL: false) else {
+            throw Abort(.internalServerError, reason: "Invalid R2 endpoint.")
+        }
+        components.percentEncodedQuery = canonicalQuery + "&X-Amz-Signature=\(signature)"
+        guard let uploadURL = components.url else {
+            throw Abort(.internalServerError, reason: "Invalid R2 endpoint.")
+        }
+        return PresignedUpload(uploadURL: uploadURL, key: key)
+    }
+
+    /// Validates a staged object (existence + magic bytes match the claimed
+    /// kind), copies it to the flat media namespace, and removes the staging
+    /// object. Returns the public URL of the promoted object.
+    static func promoteStaged(key: String, kind: MediaKind, config: R2Configuration, client: Client) async throws -> URL {
+        let parts = key.split(separator: "/")
+        guard parts.count == 2, parts[0] == "staging",
+              !parts[1].contains(".."), parts[1].count > 4 else {
+            throw Abort(.badRequest, reason: "Invalid upload key.")
+        }
+        let finalKey = String(parts[1])
+
+        let exists: Bool = try await {
+            let request = try r2Request(method: .HEAD, key: key, body: ByteBuffer(), contentType: nil, config: config)
+            let response = try await client.send(request)
+            return response.status.code == 200
+        }()
+        guard exists else {
+            throw Abort(.badRequest, reason: "Uploaded file was not received. Try uploading again.")
+        }
+
+        let prefix = try await fetchPrefix(key: key, config: config, client: client)
+        guard MagicBytes.matches(prefix, kind: kind) else {
+            try? await deleteFromR2(key: key, config: config, client: client)
+            throw Abort(.badRequest, reason: "The uploaded file doesn't look like valid \(kind == .video ? "video" : "image") data.")
+        }
+
+        let copyRequest = try r2Request(
+            method: .PUT,
+            key: finalKey,
+            body: ByteBuffer(),
+            contentType: contentType(for: finalKey),
+            config: config,
+            extraSignedHeaders: [
+                ("x-amz-copy-source", "/\(config.bucket)/\(key)"),
+                ("x-amz-metadata-directive", "REPLACE"),
+            ]
+        )
+        let copyResponse = try await client.send(copyRequest)
+        guard (200..<300).contains(copyResponse.status.code) else {
+            throw Abort(.badGateway, reason: "Finalizing the upload failed. Please try again.")
+        }
+        try? await deleteFromR2(key: key, config: config, client: client)
+        return config.publicBaseURL.appendingPathComponent(finalKey)
+    }
+
+    /// Removes a staging object directly by key (upload abandoned/rejected).
+    static func deleteStaged(key: String, config: R2Configuration, client: Client) async {
+        try? await deleteFromR2(key: key, config: config, client: client)
+    }
+
+    /// Fetches the first 64 bytes of an object for magic-byte validation —
+    /// enough for JPEG/PNG/GIF/WEBP/ISO-BMFF(ftyp) signatures without pulling
+    /// the whole file.
+    private static func fetchPrefix(key: String, config: R2Configuration, client: Client) async throws -> Data {
+        let request = try r2Request(
+            method: .GET, key: key, body: ByteBuffer(), contentType: nil, config: config,
+            extraSignedHeaders: [("range", "bytes=0-63")]
+        )
+        let response = try await client.send(request)
+        guard (200..<300).contains(response.status.code) else {
+            throw Abort(.badGateway, reason: "Could not verify the uploaded file.")
+        }
+        guard var body = response.body else {
+            throw Abort(.badGateway, reason: "Could not verify the uploaded file.")
+        }
+        return body.readData(length: min(64, body.readableBytes)) ?? Data()
+    }
+
     static func save(_ file: File, fallbackExtension: String, req: Request) async throws -> URL {
         guard let config = req.application.storage[UploadsConfigurationKey.self] else {
             throw Abort(.internalServerError, reason: "Uploads are not configured.")
@@ -197,7 +326,14 @@ enum UploadStorage {
         }
     }
 
-    private static func r2Request(method: HTTPMethod, key: String, body: ByteBuffer, contentType: String?, config: R2Configuration) throws -> ClientRequest {
+    private static func r2Request(
+        method: HTTPMethod,
+        key: String,
+        body: ByteBuffer,
+        contentType: String?,
+        config: R2Configuration,
+        extraSignedHeaders: [(String, String)] = []
+    ) throws -> ClientRequest {
         let encodedKey = key.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? key
         let objectURL = config.endpoint
             .appendingPathComponent(config.bucket)
@@ -211,12 +347,18 @@ enum UploadStorage {
             ? "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             : body.getData(at: body.readerIndex, length: body.readableBytes)!.sha256Hex
         let canonicalURI = "/\(config.bucket)/\(encodedKey)"
-        let signedHeaders = "host;x-amz-content-sha256;x-amz-date"
-        let canonicalHeaders = [
-            "host:\(host)",
-            "x-amz-content-sha256:\(payloadHash)",
-            "x-amz-date:\(timestamp.long)"
-        ].joined(separator: "\n")
+        // Headers included here are signed and must be sent verbatim.
+        var headerPairs: [(String, String)] = [
+            ("host", host),
+            ("x-amz-content-sha256", payloadHash),
+            ("x-amz-date", timestamp.long),
+        ]
+        headerPairs.append(contentsOf: extraSignedHeaders.map {
+            ($0.0.lowercased(), $0.1.trimmingCharacters(in: .whitespaces))
+        })
+        headerPairs.sort { $0.0 < $1.0 }
+        let signedHeaders = headerPairs.map(\.0).joined(separator: ";")
+        let canonicalHeaders = headerPairs.map { "\($0.0):\($0.1)" }.joined(separator: "\n")
         let canonicalRequest = [
             method.rawValue,
             canonicalURI,
@@ -243,6 +385,9 @@ enum UploadStorage {
             "x-amz-date": timestamp.long,
             "Authorization": authorization
         ]
+        for (name, value) in extraSignedHeaders {
+            headers.add(name: name, value: value)
+        }
         if let contentType {
             headers.add(name: "Content-Type", value: contentType)
         }
@@ -322,6 +467,61 @@ private extension String {
     var sha256Hex: String {
         Data(utf8).sha256Hex
     }
+
+    /// RFC 3986 strict encoding for SigV4 query params — `urlQueryAllowed`
+    /// leaves `+`, `/`, `=` unencoded and produces bad signatures.
+    var awsSigV4Encoded: String {
+        let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        return addingPercentEncoding(withAllowedCharacters: unreserved) ?? self
+    }
+}
+
+/// File-signature check for staged uploads — magic bytes can't be spoofed by
+/// renaming a file, so this blocks `.exe`-as-`.mp4` uploads.
+enum MagicBytes {
+    static func matches(_ data: Data, kind: MediaKind) -> Bool {
+        guard data.count >= 12 else { return false }
+        switch kind {
+        case .photo:
+            return data.starts(with: [0xFF, 0xD8, 0xFF])          // JPEG
+                || data.starts(with: [0x89, 0x50, 0x4E, 0x47])    // PNG
+                || data.starts(with: [0x47, 0x49, 0x46, 0x38])    // GIF8
+                || isWebP(data)
+                || hasFtypBox(data)                               // HEIC/AVIF
+        case .video:
+            return hasFtypBox(data)                               // MP4/MOV/M4V (ISO-BMFF)
+        }
+    }
+
+    /// ISO-BMFF files carry a `ftyp` box at bytes 4–7.
+    private static func hasFtypBox(_ data: Data) -> Bool {
+        data[data.index(data.startIndex, offsetBy: 4)...]
+            .starts(with: [0x66, 0x74, 0x79, 0x70])
+    }
+
+    private static func isWebP(_ data: Data) -> Bool {
+        data.starts(with: [0x52, 0x49, 0x46, 0x46])               // RIFF
+            && data[data.index(data.startIndex, offsetBy: 8)...]
+                .starts(with: [0x57, 0x45, 0x42, 0x50])           // WEBP
+    }
+}
+
+/// Per-user rate limit on upload-signing so a scripted account can't mint
+/// unbounded staging objects. One media upload costs two signs (file + thumb).
+actor SignRateLimiter {
+    private var hits: [UUID: [Date]] = [:]
+
+    func allow(user: UUID, maxPerHour: Int = 120) -> Bool {
+        let now = Date()
+        var recent = (hits[user] ?? []).filter { now.timeIntervalSince($0) < 3600 }
+        guard recent.count < maxPerHour else {
+            hits[user] = recent
+            return false
+        }
+        recent.append(now)
+        hits[user] = recent
+        return true
+    }
 }
 
 private extension Data {
@@ -347,9 +547,63 @@ private extension Data {
     }
 }
 
+private struct SignUploadRequest: Content {
+    let contentType: String
+    let fileExtension: String
+}
+
+struct SignUploadResponse: Content {
+    let uploadURL: URL
+    let key: String
+}
+
 struct UploadController: RouteCollection {
+    let signRateLimiter = SignRateLimiter()
+
+    /// Content types a client may ask to upload directly. The value is baked
+    /// into the presigned URL, so the PUT must send it verbatim — the stored
+    /// object always carries a media MIME type, never e.g. text/html.
+    private static let allowedContentTypes: Set<String> = [
+        "image/jpeg", "image/png", "image/webp", "image/heic", "image/gif",
+        "video/mp4", "video/quicktime", "video/x-m4v",
+    ]
+
+    private static let allowedExtensions: Set<String> = [
+        "jpg", "jpeg", "png", "webp", "heic", "gif", "mp4", "mov", "m4v",
+    ]
+
     func boot(routes: RoutesBuilder) throws {
         routes.get("uploads", ":filename", use: show)
+        routes
+            .grouped(UserToken.authenticator())
+            .grouped(UserToken.guardMiddleware())
+            .post("uploads", "sign", use: sign)
+    }
+
+    /// Issues a presigned PUT URL for direct client→R2 upload into the
+    /// quarantined `staging/` prefix. Registration (`POST /events/:id/uploads/
+    /// complete`) is what validates and promotes the object to a public URL.
+    func sign(req: Request) async throws -> SignUploadResponse {
+        let token = try req.auth.require(UserToken.self)
+        guard let config = req.application.storage[UploadsConfigurationKey.self],
+              let r2 = config.r2 else {
+            throw Abort(.notImplemented, reason: "Direct uploads are not configured.")
+        }
+        let body = try req.content.decode(SignUploadRequest.self)
+        let ext = body.fileExtension.lowercased()
+        guard Self.allowedExtensions.contains(ext),
+              Self.allowedContentTypes.contains(body.contentType.lowercased()) else {
+            throw Abort(.badRequest, reason: "Unsupported file type.")
+        }
+        guard await signRateLimiter.allow(user: try token.requireUserID()) else {
+            throw Abort(.tooManyRequests, reason: "Too many uploads. Try again later.")
+        }
+        let presigned = try UploadStorage.presignedPut(
+            contentType: body.contentType,
+            fileExtension: ext,
+            config: r2
+        )
+        return SignUploadResponse(uploadURL: presigned.uploadURL, key: presigned.key)
     }
 
     func show(req: Request) async throws -> Response {

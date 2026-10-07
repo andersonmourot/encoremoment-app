@@ -29,6 +29,132 @@ struct MediaUploadService {
         thumbnailData: Data? = nil,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> MediaItem {
+        if AppConfig.usesLocalAPI {
+            return try await uploadMultipart(
+                fileURL: fileURL, fileExtension: fileExtension, kind: kind,
+                to: eventID, thumbnailData: thumbnailData, onProgress: onProgress
+            )
+        }
+        do {
+            return try await uploadDirect(
+                fileURL: fileURL, fileExtension: fileExtension, kind: kind,
+                to: eventID, thumbnailData: thumbnailData, onProgress: onProgress
+            )
+        } catch UploadError.directUploadUnavailable {
+            // R2 not configured on the server — fall back to proxy uploads.
+            return try await uploadMultipart(
+                fileURL: fileURL, fileExtension: fileExtension, kind: kind,
+                to: eventID, thumbnailData: thumbnailData, onProgress: onProgress
+            )
+        }
+    }
+
+    /// Direct-to-R2 upload: sign → PUT file to R2 → register with the server.
+    /// Bytes never pass through the API, so the 100mb body cap doesn't apply.
+    private func uploadDirect(
+        fileURL: URL,
+        fileExtension: String,
+        kind: MediaKind,
+        to eventID: UUID,
+        thumbnailData: Data?,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> MediaItem {
+        let ext = fileExtension.isEmpty ? defaultFileExtension(for: kind) : fileExtension
+        let contentType = mimeType(for: ext, kind: kind)
+
+        let signed = try await requestSignedUpload(contentType: contentType, fileExtension: ext)
+        var put = URLRequest(url: signed.uploadURL)
+        put.httpMethod = "PUT"
+        put.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        try await sendPut(put, fileURL: fileURL) { fraction in
+            onProgress?(fraction * 0.9)
+        }
+
+        var thumbnailKey: String?
+        if let thumbnailData {
+            let thumbSigned = try await requestSignedUpload(contentType: "image/jpeg", fileExtension: "jpg")
+            var thumbPut = URLRequest(url: thumbSigned.uploadURL)
+            thumbPut.httpMethod = "PUT"
+            thumbPut.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+            let (data, response) = try await URLSession.shared.upload(for: thumbPut, from: thumbnailData)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw uploadError(response: response, data: data)
+            }
+            thumbnailKey = thumbSigned.key
+        }
+        onProgress?(0.95)
+
+        var complete = URLRequest(url: baseURL.appendingPathComponent("events/\(eventID.uuidString)/uploads/complete"))
+        complete.httpMethod = "POST"
+        complete.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = tokenProvider() {
+            complete.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        complete.httpBody = try JSONEncoder().encode(CompleteUploadRequest(
+            key: signed.key, thumbnailKey: thumbnailKey, kind: kind
+        ))
+        let (data, response) = try await URLSession.shared.data(for: complete)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw uploadError(response: response, data: data)
+        }
+        onProgress?(1)
+        return try decoder.decode(MediaItem.self, from: data)
+    }
+
+    private func requestSignedUpload(contentType: String, fileExtension: String) async throws -> SignedUpload {
+        var request = URLRequest(url: baseURL.appendingPathComponent("uploads/sign"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = tokenProvider() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(SignUploadRequest(
+            contentType: contentType, fileExtension: fileExtension
+        ))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 501 {
+            throw UploadError.directUploadUnavailable
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw uploadError(response: response, data: data)
+        }
+        return try decoder.decode(SignedUpload.self, from: data)
+    }
+
+    private func sendPut(
+        _ request: URLRequest,
+        fileURL: URL,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws {
+        let data: Data
+        let response: URLResponse
+        do {
+            if let onProgress {
+                let delegate = UploadProgressDelegate(onProgress: onProgress)
+                let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+                defer { session.invalidateAndCancel() }
+                (data, response) = try await session.upload(for: request, fromFile: fileURL)
+            } else {
+                (data, response) = try await URLSession.shared.upload(for: request, fromFile: fileURL)
+            }
+        } catch let error as URLError {
+            throw UploadError.network(error)
+        }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw uploadError(response: response, data: data)
+        }
+    }
+
+    /// Multipart through the API — used for local dev and as a fallback when
+    /// the server can't issue presigned URLs.
+    private func uploadMultipart(
+        fileURL: URL,
+        fileExtension: String,
+        kind: MediaKind,
+        to eventID: UUID,
+        thumbnailData: Data?,
+        onProgress: (@Sendable (Double) -> Void)?
+    ) async throws -> MediaItem {
         // Fail fast — don't stream a body the server will reject on arrival.
         if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
             let bodyBytes = Int64(size) + Int64(thumbnailData?.count ?? 0) + 1024
@@ -219,14 +345,33 @@ private struct ServerError: Decodable {
     let reason: String?
 }
 
+private struct SignUploadRequest: Encodable {
+    let contentType: String
+    let fileExtension: String
+}
+
+private struct SignedUpload: Decodable {
+    let uploadURL: URL
+    let key: String
+}
+
+private struct CompleteUploadRequest: Encodable {
+    let key: String
+    let thumbnailKey: String?
+    let kind: MediaKind
+}
+
 enum UploadError: LocalizedError {
     case tooLarge(sizeMB: Int?, kind: MediaKind?)
     case notAllowed
     case network(URLError)
+    case directUploadUnavailable
     case failed(status: Int?, reason: String?)
 
     var errorDescription: String? {
         switch self {
+        case .directUploadUnavailable:
+            return nil   // internal signal — triggers the multipart fallback
         case .tooLarge(let sizeMB, let kind):
             let sizeText = sizeMB.map { " (\($0) MB)" } ?? ""
             if kind == .video {

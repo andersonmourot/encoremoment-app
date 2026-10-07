@@ -102,6 +102,7 @@ struct EventController: RouteCollection {
         protected.put(":id", use: update)
         protected.delete(":id", use: delete)
         protected.post(":id", "uploads", use: uploadMedia)
+        protected.post(":id", "uploads", "complete", use: completeUpload)
         protected.post(":id", "media", use: addMedia)
         protected.delete(":id", "media", ":mediaId", use: removeMedia)
         protected.get(":id", "members", use: listMembers)
@@ -401,6 +402,47 @@ struct EventController: RouteCollection {
         return media.toDTO()
     }
 
+    /// Finalizes a direct-to-R2 upload: the client PUT to a presigned staging
+    /// URL, then calls this to validate (magic bytes), promote the object to
+    /// the public media namespace, and create the media row.
+    func completeUpload(req: Request) async throws -> MediaItem {
+        let token = try req.auth.require(UserToken.self)
+        guard let eventId = req.parameters.get("id", as: UUID.self) else { throw Abort(.badRequest) }
+        let event = try await Self.requireMediaUploadAllowed(eventId, token: token, on: req.db)
+        guard let config = req.application.storage[UploadsConfigurationKey.self],
+              let r2 = config.r2 else {
+            throw Abort(.notImplemented, reason: "Direct uploads are not configured.")
+        }
+        let body = try req.content.decode(CompleteUploadRequest.self)
+
+        let mediaURL = try await UploadStorage.promoteStaged(
+            key: body.key, kind: body.kind, config: r2, client: req.client
+        )
+        var thumbnailURL: URL?
+        if let thumbnailKey = body.thumbnailKey {
+            thumbnailURL = try await UploadStorage.promoteStaged(
+                key: thumbnailKey, kind: .photo, config: r2, client: req.client
+            )
+        }
+
+        let uploaderID = try token.requireUserID()
+        let dto = MediaItem(
+            eventId: eventId,
+            kind: body.kind,
+            url: mediaURL,
+            thumbnailURL: thumbnailURL ?? (body.kind == .photo ? mediaURL : nil),
+            uploaderID: uploaderID,
+            uploaderName: try await Self.displayName(for: uploaderID, on: req.db),
+            isOfficial: try await EventAccess.isOfficialUploader(event, token: token, on: req.db),
+            sortOrder: try await Self.nextSortOrder(eventId, on: req.db)
+        )
+        let media = MediaModel(from: dto)
+        media.$event.id = eventId
+        try await media.create(on: req.db)
+        try await Self.notifyCommunityUploadIfNeeded(eventId, token: token, on: req.db)
+        return media.toDTO()
+    }
+
     func removeMedia(req: Request) async throws -> HTTPStatus {
         let token = try req.auth.require(UserToken.self)
         guard let eventId = req.parameters.get("id", as: UUID.self),
@@ -657,4 +699,10 @@ private struct MediaUploadRequest: Content {
     let kind: MediaKind
     let file: File
     let thumbnail: File?
+}
+
+private struct CompleteUploadRequest: Content {
+    let key: String
+    let thumbnailKey: String?
+    let kind: MediaKind
 }
