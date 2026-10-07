@@ -19,9 +19,16 @@ struct AuthView: View {
     @State private var handle = ""
     /// Required by App Review (guideline 1.2): users must accept the Terms of
     /// Use — which state zero tolerance for objectionable content and abusive
-    /// users — before registering or logging in.
+    /// users — once per device. Bump `termsVersion` when the terms change and
+    /// the prompt returns for everyone.
+    private static let termsVersion = 1
+    @AppStorage("agreedToTermsVersion") private var agreedTermsVersion = 0
     @State private var agreedToTerms = false
     @State private var showingTerms = false
+
+    private var needsTermsAgreement: Bool {
+        agreedTermsVersion < Self.termsVersion
+    }
 
     private var normalizedEmail: String {
         email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -82,17 +89,19 @@ struct AuthView: View {
                     }
                 }
 
-                Section {
-                    Toggle(isOn: $agreedToTerms) {
-                        Text("I agree to the Terms of Use")
+                if needsTermsAgreement {
+                    Section {
+                        Toggle(isOn: $agreedToTerms) {
+                            Text("I agree to the Terms of Use")
+                        }
+                        Button {
+                            showingTerms = true
+                        } label: {
+                            Text("Read Terms of Use")
+                        }
+                    } footer: {
+                        Text("Our terms make clear there is zero tolerance for objectionable content or abusive users.")
                     }
-                    Button {
-                        showingTerms = true
-                    } label: {
-                        Text("Read Terms of Use")
-                    }
-                } footer: {
-                    Text("Our terms make clear there is zero tolerance for objectionable content or abusive users.")
                 }
 
                 Section {
@@ -107,7 +116,7 @@ struct AuthView: View {
                             Spacer()
                         }
                     }
-                    .disabled(auth.isWorking || !isValid || !agreedToTerms)
+                    .disabled(auth.isWorking || !isValid || (needsTermsAgreement && !agreedToTerms))
                 }
             }
             .navigationTitle(mode == .login ? "Welcome back" : "Join EncoreMoment")
@@ -168,6 +177,7 @@ struct AuthView: View {
                 )
             }
             if let account {
+                agreedTermsVersion = Self.termsVersion
                 await model.didSignIn(account)
                 dismiss()
             }
