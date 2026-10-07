@@ -77,7 +77,7 @@ enum EventMediaImporter {
     }
 
     static func importItems(_ items: [EventMediaImportItem], to eventId: UUID, model: AppModel) async throws {
-        var firstError: Error?
+        var failures: [Error] = []
         for item in items {
             defer { try? FileManager.default.removeItem(at: item.fileURL) }
             let isVideo = item.supportedContentTypes.contains { $0.conforms(to: UTType.movie) }
@@ -100,9 +100,9 @@ enum EventMediaImporter {
                 continue
             } catch {
                 guard AppConfig.usesLocalAPI else {
-                    // Stop the batch but still refresh so completed files appear.
-                    firstError = error
-                    break
+                    // Keep uploading the rest; report the failures at the end.
+                    failures.append(error)
+                    continue
                 }
                 // Local development can keep working without a deployed upload backend.
             }
@@ -119,6 +119,22 @@ enum EventMediaImporter {
         }
         // One refresh for the whole batch, not one per uploaded file.
         await model.refreshFeeds()
-        if let firstError { throw firstError }
+        guard let first = failures.first else { return }
+        if failures.count == items.count {
+            // Everything failed — surface the real reason, not a count.
+            throw first
+        }
+        throw ImportError.partial(failed: failures.count, total: items.count, reason: first.localizedDescription)
+    }
+
+    enum ImportError: LocalizedError {
+        case partial(failed: Int, total: Int, reason: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .partial(let failed, let total, let reason):
+                return "\(failed) of \(total) item\(total == 1 ? "" : "s") couldn't be uploaded. \(reason)"
+            }
+        }
     }
 }

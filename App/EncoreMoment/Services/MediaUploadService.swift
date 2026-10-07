@@ -3,6 +3,9 @@ import UniformTypeIdentifiers
 import EncoreMomentCore
 
 struct MediaUploadService {
+    /// Mirrors the server's `defaultMaxBodySize = "100mb"`.
+    static let maxUploadBytes: Int64 = 100 * 1024 * 1024
+
     private let baseURL: URL
     private let tokenProvider: () -> String?
     private let decoder: JSONDecoder
@@ -26,6 +29,13 @@ struct MediaUploadService {
         thumbnailData: Data? = nil,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> MediaItem {
+        // Fail fast — don't stream a body the server will reject on arrival.
+        if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            let bodyBytes = Int64(size) + Int64(thumbnailData?.count ?? 0) + 1024
+            if bodyBytes > Self.maxUploadBytes {
+                throw UploadError.tooLarge(sizeMB: Int(bodyBytes / (1024 * 1024)), kind: kind)
+            }
+        }
         let boundary = "Boundary-\(UUID().uuidString)"
         var request = URLRequest(url: baseURL.appendingPathComponent("events/\(eventID.uuidString)/uploads"))
         request.httpMethod = "POST"
@@ -44,14 +54,18 @@ struct MediaUploadService {
 
         let responseData: Data
         let response: URLResponse
-        if let onProgress {
-            // Upload task + delegate so the UI can show real progress.
-            let delegate = UploadProgressDelegate(onProgress: onProgress)
-            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-            defer { session.invalidateAndCancel() }
-            (responseData, response) = try await session.upload(for: request, fromFile: bodyFile)
-        } else {
-            (responseData, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFile)
+        do {
+            if let onProgress {
+                // Upload task + delegate so the UI can show real progress.
+                let delegate = UploadProgressDelegate(onProgress: onProgress)
+                let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+                defer { session.invalidateAndCancel() }
+                (responseData, response) = try await session.upload(for: request, fromFile: bodyFile)
+            } else {
+                (responseData, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFile)
+            }
+        } catch let error as URLError {
+            throw UploadError.network(error)
         }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw uploadError(response: response, data: responseData)
@@ -85,6 +99,8 @@ struct MediaUploadService {
     private func uploadError(response: URLResponse, data: Data) -> UploadError {
         let status = (response as? HTTPURLResponse)?.statusCode
         let reason = (try? errorDecoder.decode(ServerError.self, from: data))?.reason
+        if status == 413 { return .tooLarge(sizeMB: nil, kind: nil) }
+        if status == 401 || status == 403 { return .notAllowed }
         return UploadError.failed(status: status, reason: reason)
     }
 
@@ -204,10 +220,30 @@ private struct ServerError: Decodable {
 }
 
 enum UploadError: LocalizedError {
+    case tooLarge(sizeMB: Int?, kind: MediaKind?)
+    case notAllowed
+    case network(URLError)
     case failed(status: Int?, reason: String?)
 
     var errorDescription: String? {
         switch self {
+        case .tooLarge(let sizeMB, let kind):
+            let sizeText = sizeMB.map { " (\($0) MB)" } ?? ""
+            if kind == .video {
+                return "This video is too large to upload\(sizeText) — the limit is 100 MB, about a minute and a half of 1080p. Try a shorter clip or a lower recording resolution."
+            }
+            return "This file is too large to upload\(sizeText) — the limit is 100 MB."
+        case .notAllowed:
+            return "You don't have permission to upload to this event."
+        case .network(let error):
+            switch error.code {
+            case .notConnectedToInternet, .networkConnectionLost:
+                return "No internet connection — check your connection and try again."
+            case .timedOut:
+                return "The upload timed out. Try again on a better connection."
+            default:
+                return "The upload couldn't reach the server. Please try again."
+            }
         case .failed(let status, let reason):
             if let reason { return reason }
             if let status { return "Upload failed with status \(status)." }
